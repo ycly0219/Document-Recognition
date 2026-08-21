@@ -52,6 +52,8 @@ worker_thread = None
 export_thread = None
 preview_select_text = ""
 preview_full_log = []
+progress_percent = 0
+progress_color = "#16A34A"
 
 class GuiLogHandler(logging.Handler):
     def emit(self, record):
@@ -76,6 +78,8 @@ def flush_log():
         log_text.insert(tk.END, line + "\n")
     log_text.see(tk.END)
     log_text.update_idletasks()
+
+PREVIEW_HEADING_FONT = ("黑体", 15, "bold")
 
 class EditableTreeview(ttk.Treeview):
     """支持双击编辑单元格、以及新增/删除行的 Treeview。"""
@@ -130,19 +134,26 @@ class EditableTreeview(ttk.Treeview):
         if self["columns"]:
             self.insert("", tk.END, values=("",) * len(self["columns"]),
                         tags=("new_row",))
+            self._renumber()
             self.see(self.get_children()[-1])
 
     def delete_selected(self):
         for row_id in self.selection():
             self.delete(row_id)
+        self._renumber()
+
+    def _renumber(self):
+        for index, row_id in enumerate(self.get_children(), 1):
+            self.item(row_id, text=index)
 
     def auto_size_columns(self, max_width=320, min_width=90, padding=26):
         """按内容自动收缩列宽并居中，长内容由用户拖动列宽查看。"""
         font = tkfont.nametofont("TkDefaultFont")
+        heading_font = tkfont.Font(font=PREVIEW_HEADING_FONT)
         for col in self["columns"]:
             content_w = [font.measure(self.set(row, col))
                          for row in self.get_children()]
-            width = max([font.measure(col)] + content_w) + padding
+            width = max([heading_font.measure(col)] + content_w) + padding
             width = min(max(min_width, width), max_width)
             self.column(col, width=width, minwidth=min_width,
                         stretch=False, anchor="center")
@@ -339,6 +350,7 @@ def run_task():
 
     btn.config(text="正在处理...", state=tk.DISABLED)
     mock_check.config(state=tk.DISABLED)
+    set_progress_state(50, "处理进度：已开始（50%）")
     win.update()
     current_model_id = MODEL_MAP[select_text]
 
@@ -371,7 +383,7 @@ def process_batch(files, select_text, current_model_id):
     fail_count = 0
     print_log(f"===== 批量处理，共{total_files}个文件，模版：{select_text} =====")
 
-    for file_path in files:
+    for done, file_path in enumerate(files, 1):
         filename = os.path.basename(file_path)
         status = "失败"
         res_msg = ""
@@ -624,6 +636,7 @@ def process_batch(files, select_text, current_model_id):
             print_log(f"❌ [{filename}] 处理失败：{e}")
 
         full_log_data.append([filename, file_id, file_url, req_uuid, "", status, res_msg, ""])
+        ui_message_queue.put(("progress", done, total_files))
 
     print_log(f"\n===== 批量处理结束 =====")
     print_log(f"总文件：{total_files} | 成功：{success_count} | 失败：{fail_count} | 有效明细行数：{len(core_data)}")
@@ -638,6 +651,7 @@ def process_batch(files, select_text, current_model_id):
 
 def process_mock_batch(select_text):
     print_log(f"===== 模拟数据模式，模板：{select_text} =====")
+    ui_message_queue.put(("progress", 1, 2))
     headers, core_data = generate_mock_data(select_text)
     full_log_data = [
         ["模拟文件-01.png", "", "", "", "", "成功", "", ""],
@@ -646,6 +660,7 @@ def process_mock_batch(select_text):
     success_count = 2
     fail_count = 0
     print_log(f"生成模拟明细行数: {len(core_data)}")
+    ui_message_queue.put(("progress", 2, 2))
     ui_message_queue.put(("preview", select_text, headers, core_data,
                           full_log_data, success_count, fail_count))
 
@@ -805,8 +820,10 @@ def show_preview(select_text, headers, rows, full_log_data,
     table_data.column("#0", width=40, minwidth=30, stretch=False, anchor="center")
     for h in headers:
         table_data.heading(h, text=h)
-    for row in rows:
-        table_data.insert("", tk.END, values=row)
+    for row_index, row in enumerate(rows):
+        tag = "zebra_even" if row_index % 2 == 0 else "zebra_odd"
+        table_data.insert("", tk.END, values=row, tags=(tag,))
+    table_data._renumber()
     table_data.auto_size_columns()
 
     mock_check.config(state=tk.DISABLED)
@@ -817,10 +834,12 @@ def show_preview(select_text, headers, rows, full_log_data,
     clear_btn.config(state=tk.NORMAL)
     print_log(f"预览数据就绪：模板 {select_text}，明细行数 {len(rows)}，"
               f"成功 {success_count}，失败 {fail_count}")
+    set_progress_state(100, "处理进度：完成")
 
 
 def clear_preview():
     table_data.clear_rows()
+    set_progress_state(0, "处理进度：待开始")
     export_btn.config(state=tk.DISABLED)
     add_btn.config(state=tk.DISABLED)
     del_btn.config(state=tk.DISABLED)
@@ -856,6 +875,38 @@ def export_worker(rows):
     ui_message_queue.put(("complete", msg))
 
 
+def draw_progress_canvas():
+    width = progress_canvas.winfo_width()
+    height = progress_canvas.winfo_height()
+    if width <= 1 or height <= 1:
+        return
+    progress_canvas.delete("all")
+    progress_canvas.create_rectangle(
+        1, 1, width - 1, height - 1, fill="#E5E7EB", outline="#94A3B8"
+    )
+    fill_width = int((width - 2) * progress_percent / 100)
+    if fill_width > 0:
+        progress_canvas.create_rectangle(
+            1, 1, fill_width + 1, height - 1, fill=progress_color, outline=""
+        )
+
+
+def set_progress_state(percent, text, color="#16A34A"):
+    global progress_percent, progress_color
+    progress_percent = percent
+    progress_color = color
+    progress_label.config(
+        text=text,
+        fg="#B42318" if color == "#D92D20" else "#111827"
+    )
+    draw_progress_canvas()
+
+
+def update_progress(done, total):
+    percent = 50 + round(done / total * 50) if total else 100
+    set_progress_state(percent, f"处理进度：{done}/{total}（{percent}%）")
+
+
 def poll_ui_queue():
     flush_log()
     while True:
@@ -865,12 +916,15 @@ def poll_ui_queue():
             break
         if kind == "preview":
             show_preview(*payload)
+        elif kind == "progress":
+            update_progress(payload[0], payload[1])
         elif kind == "complete":
             export_btn.config(state=tk.NORMAL)
             messagebox.showinfo("完成", payload[0])
         elif kind == "processing_error":
             btn.config(text="选择文件并开始处理", state=tk.NORMAL)
             mock_check.config(state=tk.NORMAL)
+            set_progress_state(100, "处理进度：处理失败", "#D92D20")
             messagebox.showerror("错误", payload[0])
         elif kind == "export_error":
             export_btn.config(state=tk.NORMAL)
@@ -902,17 +956,33 @@ mock_check.pack(side=tk.LEFT, padx=(0, 20))
 btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width=22,
                 bg="#4CAF50", fg="#0B3D0F", font=("黑体", 11))
 btn.pack(side=tk.LEFT)
+clear_btn = tk.Button(top, text="清空/重新开始", command=clear_preview,
+                      width=14, state=tk.DISABLED)
+clear_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+progress_frame = tk.Frame(win)
+progress_frame.pack(fill=tk.X, padx=10, pady=(8, 0))
+
+progress_label = tk.Label(progress_frame, text="处理进度：待开始",
+                          font=("黑体", 11, "bold"), anchor="w")
+progress_label.pack(fill=tk.X)
+
+progress_canvas = tk.Canvas(progress_frame, height=28, highlightthickness=0)
+progress_canvas.pack(fill=tk.X, pady=(4, 0))
+progress_canvas.bind("<Configure>", lambda _event: draw_progress_canvas())
 
 table_frame = tk.Frame(win)
 table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
 style = ttk.Style(win)
 style.configure("Preview.Treeview", background="#FFFFFF",
-                fieldbackground="#FFFFFF", rowheight=26)
+                fieldbackground="#FFFFFF", rowheight=39)
 style.configure("Preview.Treeview.Heading", background="#E8EEF2",
-                font=("黑体", 10), anchor="center")
+                font=PREVIEW_HEADING_FONT, anchor="center")
 table_data = EditableTreeview(table_frame, style="Preview.Treeview")
 table_data.tag_configure("new_row", background="#FFF3CD")
+table_data.tag_configure("zebra_even", background="#FFFFFF")
+table_data.tag_configure("zebra_odd", background="#EFF5F9")
 vsb = ttk.Scrollbar(table_frame, orient="vertical", command=table_data.yview)
 hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=table_data.xview)
 table_data.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -934,9 +1004,6 @@ del_btn.pack(side=tk.LEFT, padx=(0, 8))
 export_btn = tk.Button(op_frame, text="确认并导出", command=start_export,
                        width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
 export_btn.pack(side=tk.LEFT, padx=(0, 8))
-clear_btn = tk.Button(op_frame, text="清空/重新开始", command=clear_preview,
-                      width=14, state=tk.DISABLED)
-clear_btn.pack(side=tk.LEFT)
 
 tk.Label(win, text="处理日志", font=("黑体", 10)).pack(anchor="w", padx=12)
 log_text = tk.Text(win, height=8, width=110)
