@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import tkinter.font as tkfont
 import requests
 import json
 import logging
@@ -48,6 +49,9 @@ BITABLE_RECORDS_URL = "https://open.feishu.cn/open-apis/bitable/v1/apps/Jqfwbt2b
 log_queue = queue.Queue()
 ui_message_queue = queue.Queue()
 worker_thread = None
+export_thread = None
+preview_select_text = ""
+preview_full_log = []
 
 class GuiLogHandler(logging.Handler):
     def emit(self, record):
@@ -72,6 +76,87 @@ def flush_log():
         log_text.insert(tk.END, line + "\n")
     log_text.see(tk.END)
     log_text.update_idletasks()
+
+class EditableTreeview(ttk.Treeview):
+    """支持双击编辑单元格、以及新增/删除行的 Treeview。"""
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self._entry = None
+        self._bound_item = None
+        self._bound_col = None
+        self.bind("<Double-1>", self._start_edit)
+
+    def _start_edit(self, event):
+        if self.identify("region", event.x, event.y) != "cell":
+            return
+        row_id = self.identify_row(event.y)
+        col_index = int(self.identify_column(event.x).replace("#", "")) - 1
+        headers = self["columns"]
+        if not row_id or col_index < 0 or col_index >= len(headers):
+            return
+        bbox = self.bbox(row_id, self.identify_column(event.x))
+        if not bbox:
+            return
+        self._finish_edit()
+        col_id = headers[col_index]
+        entry = tk.Entry(self)
+        entry.insert(0, self.set(row_id, col_id))
+        entry.select_range(0, tk.END)
+        entry.place(x=bbox[0], y=bbox[1], width=bbox[2], height=bbox[3])
+        entry.focus_set()
+        self._entry = entry
+        self._bound_item = row_id
+        self._bound_col = col_id
+        entry.bind("<Return>", self._finish_edit)
+        entry.bind("<FocusOut>", self._finish_edit)
+        entry.bind("<Escape>", self._cancel_edit)
+
+    def _finish_edit(self, _event=None):
+        if self._entry is not None:
+            self.set(self._bound_item, self._bound_col, self._entry.get())
+            self._destroy_edit()
+
+    def _cancel_edit(self, _event=None):
+        self._destroy_edit()
+
+    def _destroy_edit(self):
+        if self._entry is not None:
+            self._entry.destroy()
+            self._entry = None
+            self._bound_item = None
+            self._bound_col = None
+
+    def add_row(self):
+        if self["columns"]:
+            self.insert("", tk.END, values=("",) * len(self["columns"]),
+                        tags=("new_row",))
+            self.see(self.get_children()[-1])
+
+    def delete_selected(self):
+        for row_id in self.selection():
+            self.delete(row_id)
+
+    def auto_size_columns(self, max_width=320, min_width=90, padding=26):
+        """按内容自动收缩列宽并居中，长内容由用户拖动列宽查看。"""
+        font = tkfont.nametofont("TkDefaultFont")
+        for col in self["columns"]:
+            content_w = [font.measure(self.set(row, col))
+                         for row in self.get_children()]
+            width = max([font.measure(col)] + content_w) + padding
+            width = min(max(min_width, width), max_width)
+            self.column(col, width=width, minwidth=min_width,
+                        stretch=False, anchor="center")
+            self.heading(col, anchor="center")
+
+    def clear_rows(self):
+        for row_id in self.get_children():
+            self.delete(row_id)
+
+    def get_data(self):
+        headers = list(self["columns"])
+        rows = [[self.set(row_id, col) for col in headers]
+                for row_id in self.get_children()]
+        return headers, rows
 
 def get_file_type_and_content_type(file_path):
     ext = os.path.splitext(file_path)[1].lower()
@@ -235,40 +320,47 @@ def run_task():
         messagebox.showwarning("温馨提示", "请先选择单据规则！")
         return
 
-    files = filedialog.askopenfilenames(
-        title="选择要处理的文件",
-        filetypes=[
-            ("全部支持文件", "*.png;*.jpg;*.jpeg;*.pdf"),
-            ("图片文件", "*.png;*.jpg;*.jpeg"),
-            ("PDF 文件", "*.pdf"),
-            ("PNG 文件", "*.png"),
-            ("JPG 文件", "*.jpg;*.jpeg"),
-            ("所有文件", "*.*")
-        ]
-    )
-    if not files:
-        return
+    mock_mode = mock_var.get()
+    files = ()
+    if not mock_mode:
+        files = filedialog.askopenfilenames(
+            title="选择要处理的文件",
+            filetypes=[
+                ("全部支持文件", "*.png;*.jpg;*.jpeg;*.pdf"),
+                ("图片文件", "*.png;*.jpg;*.jpeg"),
+                ("PDF 文件", "*.pdf"),
+                ("PNG 文件", "*.png"),
+                ("JPG 文件", "*.jpg;*.jpeg"),
+                ("所有文件", "*.*")
+            ]
+        )
+        if not files:
+            return
 
     btn.config(text="正在处理...", state=tk.DISABLED)
+    mock_check.config(state=tk.DISABLED)
     win.update()
     current_model_id = MODEL_MAP[select_text]
 
     global worker_thread
     worker_thread = threading.Thread(
         target=process_batch_worker,
-        args=(files, select_text, current_model_id),
+        args=(files, select_text, current_model_id, mock_mode),
         daemon=True
     )
     worker_thread.start()
     win.after(100, poll_ui_queue)
 
 
-def process_batch_worker(files, select_text, current_model_id):
+def process_batch_worker(files, select_text, current_model_id, mock_mode):
     try:
-        process_batch(files, select_text, current_model_id)
+        if mock_mode:
+            process_mock_batch(select_text)
+        else:
+            process_batch(files, select_text, current_model_id)
     except Exception as e:
         print_log(f"处理流程异常: {str(e)}")
-        ui_message_queue.put(("error", f"处理流程异常: {str(e)}"))
+        ui_message_queue.put(("processing_error", f"处理流程异常: {str(e)}"))
 
 
 def process_batch(files, select_text, current_model_id):
@@ -535,40 +627,34 @@ def process_batch(files, select_text, current_model_id):
 
     print_log(f"\n===== 批量处理结束 =====")
     print_log(f"总文件：{total_files} | 成功：{success_count} | 失败：{fail_count} | 有效明细行数：{len(core_data)}")
-
-    # 写入飞书多维表格
     print_log("开始同步统计数据至飞书多维表格...")
     token = get_tenant_access_token()
     send_to_bitable(token, select_text, total_files)
 
-    try:
-        output_file = export_excel(select_text, core_data, full_log_data)
-    except PermissionError:
-        print_log("无法写入文件，请关闭 Excel 文件后重试。")
-        ui_message_queue.put(("error", "无法写入文件，请关闭 Excel 文件后重试。"))
-        return
-    except Exception as e:
-        print_log(f"Excel导出失败：{str(e)}")
-        ui_message_queue.put(("error", f"Excel导出失败: {str(e)}"))
-        return
-
-    msg = (f"处理完成！\n成功文件数: {success_count}\n失败文件数: {fail_count}\n"
-           f"拆分LPN/Serial后有效数据行数: {len(core_data)}\n"
-           f"结果已导出至: {os.path.basename(output_file)}")
-    ui_message_queue.put(("complete", msg))
+    ui_message_queue.put(("preview", select_text,
+                          get_core_headers(select_text), core_data,
+                          full_log_data, success_count, fail_count))
 
 
-def export_excel(select_text, core_data, full_log_data):
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(os.getcwd(), f"GE单据OCR识别结果_{timestamp}.xlsx")
+def process_mock_batch(select_text):
+    print_log(f"===== 模拟数据模式，模板：{select_text} =====")
+    headers, core_data = generate_mock_data(select_text)
+    full_log_data = [
+        ["模拟文件-01.png", "", "", "", "", "成功", "", ""],
+        ["模拟文件-02.pdf", "", "", "", "", "成功", "", ""]
+    ]
+    success_count = 2
+    fail_count = 0
+    print_log(f"生成模拟明细行数: {len(core_data)}")
+    ui_message_queue.put(("preview", select_text, headers, core_data,
+                          full_log_data, success_count, fail_count))
 
-    wb = Workbook()
-    ws_core = wb.active
-    ws_core.title = "识别结果列表"
 
+# 每个模板对应的预览/导出列结构
+def get_core_headers(select_text):
     if select_text == "GE-ORACLE拣货单":
         # Order Number后面紧跟全部新增字段
-        core_headers = [
+        return [
             "Order Number",
             "OrderType",
             "Ordered Date",
@@ -596,7 +682,7 @@ def export_excel(select_text, core_data, full_log_data):
             "Item Details"
         ]
     elif select_text == "GE-OSCAR拣货单":
-        core_headers = [
+        return [
             "服务申请号", "SR编号", "供应商", "SSO", "收货地址",
             "时效", "收货人电话", "申请说明",
             "收货人", "姓名", "客户设备id",
@@ -604,12 +690,84 @@ def export_excel(select_text, core_data, full_log_data):
         ]
     elif select_text == "GE-发票单":
         # DELIVERY后面紧跟 DATE、CARRIER、HAWB
-        core_headers = [
+        return [
             "INVOICE NO", "DELIVERY",
             "DATE", "CARRIER", "HAWB",
             "QTY", "ITEM NUMBER", "LPN Number", "Serial Number",
             "LOT Number", "SALES ORDER NO", "CUSTOMER PO", "Expiration Date"
         ]
+    raise ValueError(f"未知模板: {select_text}")
+
+
+# 演示用固定样例数据，结构与真实解析结果一致，不调用接口
+def generate_mock_data(select_text):
+    headers = get_core_headers(select_text)
+    if select_text == "GE-ORACLE拣货单":
+        rows = [
+            ["PO240821-001", "ORACLE", "2026/08/21", "P1", "AIR", "STANDARD",
+             "SSO001", "ZHANGSAN", "GE HEALTHCARE", "CUS-1001",
+             "SHIP ASAP", "", "99999", "2026/08/21", "SYS-01",
+             "SUBINV-A", "PO-2026-001", "NO.100 ZHANGJIANG ROAD SHANGHAI",
+             "FE@GE.COM", "DEL-20260821-01",
+             "T1001", "ITEM-A001", "10", "A-01-01", "MATERIAL A"],
+            ["PO240821-001", "ORACLE", "2026/08/21", "P1", "AIR", "STANDARD",
+             "SSO001", "ZHANGSAN", "GE HEALTHCARE", "CUS-1001",
+             "SHIP ASAP", "", "99999", "2026/08/21", "SYS-01",
+             "SUBINV-A", "PO-2026-001", "NO.100 ZHANGJIANG ROAD SHANGHAI",
+             "FE@GE.COM", "DEL-20260821-01",
+             "T1002", "ITEM-B001", "5", "B-02-03", "MATERIAL B"],
+            ["PO240821-002", "ORACLE", "2026/08/21", "P2", "SEA", "STANDARD",
+             "SSO002", "LISI", "GE HEALTHCARE", "CUS-1002",
+             "", "", "99999", "2026/08/21", "SYS-02",
+             "SUBINV-B", "PO-2026-002", "NO.200 PUJIAN ROAD SHANGHAI",
+             "FE2@GE.COM", "DEL-20260821-02",
+             "T2001", "ITEM-C001", "8", "C-03-05", "MATERIAL C"]
+        ]
+    elif select_text == "GE-OSCAR拣货单":
+        rows = [
+            ["SA20260821-01", "SR-001", "GE SUPPLIER", "SSO-OSC-01",
+             "NO.1 SUPPLY ROAD SHANGHAI", "24H", "13800000001", "APPLICATION NOTE",
+             "RECEIVER-01", "LI SI", "DEVICE-001",
+             "MT-OSC-001", "12", "SN-0001", "TR-0001", "LOC-01", "TO RECEIVE", "WH-A"],
+            ["SA20260821-01", "SR-001", "GE SUPPLIER", "SSO-OSC-01",
+             "NO.1 SUPPLY ROAD SHANGHAI", "24H", "13800000001", "APPLICATION NOTE",
+             "RECEIVER-01", "LI SI", "DEVICE-001",
+             "MT-OSC-002", "6", "SN-0002", "TR-0002", "LOC-02", "TO RECEIVE", "WH-A"],
+            ["SA20260821-02", "SR-002", "GE SUPPLIER", "SSO-OSC-02",
+             "NO.2 SUPPLY ROAD SHANGHAI", "48H", "13900000002", "APPLICATION NOTE 2",
+             "RECEIVER-02", "WANG WU", "DEVICE-002",
+             "MT-OSC-003", "3", "SN-0003", "TR-0003", "LOC-03", "PICKED", "WH-B"]
+        ]
+    elif select_text == "GE-发票单":
+        # 前两行演示 LPN/Serial 按数量拆分后的效果
+        rows = [
+            ["INV20260821-01", "DEL-20260821", "2026/08/21", "FEDEX", "HAWB-001",
+             "1", "ITEM-INV-001", "LPN-1", "", "LOT-01", "SO-001", "PO-001", "2026/09/30"],
+            ["INV20260821-01", "DEL-20260821", "2026/08/21", "FEDEX", "HAWB-001",
+             "1", "ITEM-INV-001", "LPN-2", "", "LOT-01", "SO-001", "PO-001", "2026/09/30"],
+            ["INV20260821-01", "DEL-20260821", "2026/08/21", "FEDEX", "HAWB-001",
+             "1", "ITEM-INV-001", "LPN-3", "", "LOT-01", "SO-001", "PO-001", "2026/09/30"],
+            ["INV20260821-01", "DEL-20260821", "2026/08/21", "FEDEX", "HAWB-001",
+             "1", "ITEM-INV-002", "LPN-4", "SN-A", "LOT-02", "SO-002", "PO-002", "2026/10/31"],
+            ["INV20260821-01", "DEL-20260821", "2026/08/21", "FEDEX", "HAWB-001",
+             "1", "ITEM-INV-002", "LPN-4", "SN-B", "LOT-02", "SO-002", "PO-002", "2026/10/31"],
+            ["INV20260821-02", "DEL-20260822", "2026/08/22", "DHL", "HAWB-002",
+             "1", "ITEM-INV-003", "LPN-9", "SN-C", "LOT-03", "SO-003", "PO-003", "2026/11/30"]
+        ]
+    else:
+        raise ValueError(f"未知模板: {select_text}")
+    return headers, rows
+
+
+def export_excel(select_text, core_data, full_log_data):
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    output_file = os.path.join(os.getcwd(), f"GE单据OCR识别结果_{timestamp}.xlsx")
+
+    wb = Workbook()
+    ws_core = wb.active
+    ws_core.title = "识别结果列表"
+
+    core_headers = get_core_headers(select_text)
 
     ws_core.append(core_headers)
     for row in core_data:
@@ -636,42 +794,152 @@ def export_excel(select_text, core_data, full_log_data):
     return output_file
 
 
+# ---------------- 预览与导出交互 ----------------
+def show_preview(select_text, headers, rows, full_log_data,
+                 success_count, fail_count):
+    global preview_select_text, preview_full_log
+    preview_select_text = select_text
+    preview_full_log = full_log_data
+
+    table_data["columns"] = headers
+    table_data.column("#0", width=40, minwidth=30, stretch=False, anchor="center")
+    for h in headers:
+        table_data.heading(h, text=h)
+    for row in rows:
+        table_data.insert("", tk.END, values=row)
+    table_data.auto_size_columns()
+
+    mock_check.config(state=tk.DISABLED)
+    btn.config(text="预览中", state=tk.DISABLED)
+    add_btn.config(state=tk.NORMAL)
+    del_btn.config(state=tk.NORMAL)
+    export_btn.config(state=tk.NORMAL if rows else tk.DISABLED)
+    clear_btn.config(state=tk.NORMAL)
+    print_log(f"预览数据就绪：模板 {select_text}，明细行数 {len(rows)}，"
+              f"成功 {success_count}，失败 {fail_count}")
+
+
+def clear_preview():
+    table_data.clear_rows()
+    export_btn.config(state=tk.DISABLED)
+    add_btn.config(state=tk.DISABLED)
+    del_btn.config(state=tk.DISABLED)
+    clear_btn.config(state=tk.DISABLED)
+    btn.config(text="选择文件并开始处理", state=tk.NORMAL)
+    mock_check.config(state=tk.NORMAL)
+
+
+def start_export():
+    _, rows = table_data.get_data()
+    if not rows:
+        messagebox.showwarning("温馨提示", "没有可导出的明细数据")
+        return
+    export_btn.config(state=tk.DISABLED)
+    global export_thread
+    export_thread = threading.Thread(target=export_worker, args=(rows,), daemon=True)
+    export_thread.start()
+    win.after(100, poll_ui_queue)
+
+
+def export_worker(rows):
+    try:
+        output_file = export_excel(preview_select_text, rows, preview_full_log)
+    except PermissionError:
+        ui_message_queue.put(("export_error", "无法写入文件，请关闭 Excel 文件后重试。"))
+        return
+    except Exception as e:
+        ui_message_queue.put(("export_error", f"Excel导出失败: {str(e)}"))
+        return
+
+    msg = (f"导出完成！\n明细行数: {len(rows)}\n"
+           f"结果文件: {os.path.basename(output_file)}")
+    ui_message_queue.put(("complete", msg))
+
+
 def poll_ui_queue():
     flush_log()
     while True:
         try:
-            kind, payload = ui_message_queue.get_nowait()
+            kind, *payload = ui_message_queue.get_nowait()
         except queue.Empty:
             break
-        if kind == "complete":
+        if kind == "preview":
+            show_preview(*payload)
+        elif kind == "complete":
+            export_btn.config(state=tk.NORMAL)
+            messagebox.showinfo("完成", payload[0])
+        elif kind == "processing_error":
             btn.config(text="选择文件并开始处理", state=tk.NORMAL)
-            messagebox.showinfo("完成", payload)
-        elif kind == "error":
-            btn.config(text="选择文件并开始处理", state=tk.NORMAL)
-            messagebox.showerror("错误", payload)
+            mock_check.config(state=tk.NORMAL)
+            messagebox.showerror("错误", payload[0])
+        elif kind == "export_error":
+            export_btn.config(state=tk.NORMAL)
+            messagebox.showerror("错误", payload[0])
 
-    if worker_thread is not None and worker_thread.is_alive():
+    if (worker_thread is not None and worker_thread.is_alive()) or \
+       (export_thread is not None and export_thread.is_alive()):
         win.after(100, poll_ui_queue)
+
 
 # ========== 界面部分 ==========
 win = tk.Tk()
 win.title("GE单据批量OCR处理工具")
-win.geometry("980x440")
+win.geometry("1180x760")
 
-tk.Label(win, text="选择模版规则：", font=("黑体", 11)).place(x=30, y=15)
-combo_model = ttk.Combobox(win, width=28, font=("黑体", 11), state="readonly")
+top = tk.Frame(win)
+top.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+tk.Label(top, text="选择模版规则：", font=("黑体", 11)).pack(side=tk.LEFT)
+combo_model = ttk.Combobox(top, width=28, font=("黑体", 11), state="readonly")
 combo_model["values"] = list(MODEL_MAP.keys())
 combo_model.set("")
-combo_model.place(x=130, y=15)
+combo_model.pack(side=tk.LEFT, padx=(0, 20))
 
-tk.Label(win, text="支持格式: 图片 / PDF\n支持单据: GE‑ORACLE拣货单、GE‑OSCAR拣货单、GE‑发票单",
-          font=("黑体", 12), justify=tk.LEFT).pack(pady=50)
+mock_var = tk.BooleanVar(value=False)
+mock_check = tk.Checkbutton(top, text="模拟数据", variable=mock_var, font=("黑体", 11))
+mock_check.pack(side=tk.LEFT, padx=(0, 20))
 
-btn = tk.Button(win, text="选择文件并开始处理", command=run_task, width=25, height=2,
-                bg="#4CAF50", fg="white", font=("黑体", 12))
-btn.pack(pady=10)
+btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width=22,
+                bg="#4CAF50", fg="#0B3D0F", font=("黑体", 11))
+btn.pack(side=tk.LEFT)
 
-log_text = tk.Text(win, height=12, width=110)
-log_text.pack(pady=10)
+table_frame = tk.Frame(win)
+table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+style = ttk.Style(win)
+style.configure("Preview.Treeview", background="#FFFFFF",
+                fieldbackground="#FFFFFF", rowheight=26)
+style.configure("Preview.Treeview.Heading", background="#E8EEF2",
+                font=("黑体", 10), anchor="center")
+table_data = EditableTreeview(table_frame, style="Preview.Treeview")
+table_data.tag_configure("new_row", background="#FFF3CD")
+vsb = ttk.Scrollbar(table_frame, orient="vertical", command=table_data.yview)
+hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=table_data.xview)
+table_data.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+table_data.grid(row=0, column=0, sticky="nsew")
+vsb.grid(row=0, column=1, sticky="ns")
+hsb.grid(row=1, column=0, sticky="ew")
+table_frame.rowconfigure(0, weight=1)
+table_frame.columnconfigure(0, weight=1)
+
+op_frame = tk.Frame(win)
+op_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+add_btn = tk.Button(op_frame, text="新增行", command=table_data.add_row,
+                    width=10, state=tk.DISABLED)
+add_btn.pack(side=tk.LEFT, padx=(0, 8))
+del_btn = tk.Button(op_frame, text="删除行", command=table_data.delete_selected,
+                    width=10, state=tk.DISABLED)
+del_btn.pack(side=tk.LEFT, padx=(0, 8))
+export_btn = tk.Button(op_frame, text="确认并导出", command=start_export,
+                       width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
+export_btn.pack(side=tk.LEFT, padx=(0, 8))
+clear_btn = tk.Button(op_frame, text="清空/重新开始", command=clear_preview,
+                      width=14, state=tk.DISABLED)
+clear_btn.pack(side=tk.LEFT)
+
+tk.Label(win, text="处理日志", font=("黑体", 10)).pack(anchor="w", padx=12)
+log_text = tk.Text(win, height=8, width=110)
+log_text.pack(fill=tk.X, padx=10, pady=(2, 10))
 
 win.mainloop()
