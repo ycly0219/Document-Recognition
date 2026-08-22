@@ -673,6 +673,9 @@ btn.pack(side=tk.LEFT)
 clear_btn = tk.Button(top, text="清空/重新开始", command=clear_preview,
                       width=14, state=tk.DISABLED)
 clear_btn.pack(side=tk.LEFT, padx=(0, 8))
+export_btn = tk.Button(top, text="确认并导出", command=start_export,
+                       width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
+export_btn.pack(side=tk.LEFT)
 
 progress_frame = tk.Frame(win)
 progress_frame.pack(fill=tk.X, padx=10, pady=(8, 0))
@@ -722,9 +725,6 @@ paste_btn.pack(side=tk.LEFT, padx=(0, 8))
 del_btn = tk.Button(op_frame, text="删除行", command=active_tree_delete_selected,
                     width=10, state=tk.DISABLED)
 del_btn.pack(side=tk.LEFT, padx=(0, 8))
-export_btn = tk.Button(op_frame, text="确认并导出", command=start_export,
-                       width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
-export_btn.pack(side=tk.LEFT, padx=(0, 8))
 
 tk.Label(win, text="处理日志", font=("黑体", 10)).pack(anchor="w", padx=12)
 log_text = tk.Text(win, height=8, width=110)
