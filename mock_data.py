@@ -13,19 +13,19 @@ def generate_mock_data(select_text):
              "SHIP ASAP", "", "99999", "2026/08/21", "SYS-01",
              "SUBINV-A", "PO-2026-001", "NO.100 ZHANGJIANG ROAD SHANGHAI",
              "FE@GE.COM", "DEL-20260821-01",
-             "T1001", "ITEM-A001", "10", "A-01-01", "MATERIAL A"],
+             "T1001", "ITEM-A001", "10", "A-01-01", "LPN-A18-480056", "SN-12444", "", "CN"],
             ["PO240821-001", "ORACLE", "2026/08/21", "P1", "AIR", "STANDARD",
              "SSO001", "ZHANGSAN", "GE HEALTHCARE", "CUS-1001",
              "SHIP ASAP", "", "99999", "2026/08/21", "SYS-01",
              "SUBINV-A", "PO-2026-001", "NO.100 ZHANGJIANG ROAD SHANGHAI",
              "FE@GE.COM", "DEL-20260821-01",
-             "T1002", "ITEM-B001", "5", "B-02-03", "MATERIAL B"],
+             "T1002", "ITEM-B001", "5", "B-02-03", "LPN-B02", "", "LOT-B02", "US"],
             ["PO240821-002", "ORACLE", "2026/08/21", "P2", "SEA", "STANDARD",
              "SSO002", "LISI", "GE HEALTHCARE", "CUS-1002",
              "", "", "99999", "2026/08/21", "SYS-02",
              "SUBINV-B", "PO-2026-002", "NO.200 PUJIAN ROAD SHANGHAI",
              "FE2@GE.COM", "DEL-20260821-02",
-             "T2001", "ITEM-C001", "8", "C-03-05", "MATERIAL C"]
+             "T2001", "ITEM-C001", "8", "C-03-05", "LPN-C03", "SN-C03", "LOT-C03", "DE"]
         ]
     elif select_text == "GE-OSCAR拣货单":
         rows = [

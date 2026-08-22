@@ -1,6 +1,14 @@
 """三种单据模板的列头定义、识别结果解析与发票明细拆分。"""
 
+import re
+
 from logging_utils import print_log
+
+
+_ITEM_DETAIL_PATTERN = re.compile(
+    r"(?<![A-Za-z])(LPN|Serial|Lot|COO):\s*(.*?)(?=\s*(?:LPN|Serial|Lot|COO):|\Z)",
+    re.DOTALL,
+)
 
 
 def get_core_headers(select_text):
@@ -32,7 +40,10 @@ def get_core_headers(select_text):
             "Item Number",
             "Qty",
             "Pick From Locator",
-            "Item Details"
+            "LPN",
+            "Serial",
+            "Lot",
+            "COO"
         ]
     elif select_text == "GE-OSCAR拣货单":
         return [
@@ -89,6 +100,12 @@ def _parse_oracle_picklist(commit_result, filename):
         qty = item.get("Qty", {}).get("value", "").strip()
         pick_loc = item.get("Pick From Locator", {}).get("value", "").strip()
         item_detail = item.get("Item Details", {}).get("value", "").strip()
+        un_number_index = item_detail.find("UN Number:")
+        if un_number_index >= 0:
+            item_detail = item_detail[:un_number_index]
+        trace_values = {label: "" for label in ("LPN", "Serial", "Lot", "COO")}
+        for label, value in _ITEM_DETAIL_PATTERN.findall(item_detail):
+            trace_values[label] = value.strip()
 
         # Order Number后面拼接全部新增字段
         rows.append([
@@ -116,7 +133,10 @@ def _parse_oracle_picklist(commit_result, filename):
             item_no,
             qty,
             pick_loc,
-            item_detail
+            trace_values["LPN"],
+            trace_values["Serial"],
+            trace_values["Lot"],
+            trace_values["COO"]
         ])
     return rows
 

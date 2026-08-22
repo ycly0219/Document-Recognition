@@ -5,6 +5,8 @@
 ## 当前功能
 
 - 支持三种单据模板：`GE-ORACLE拣货单`、`GE-OSCAR拣货单`、`GE-发票单`
+- `GE-ORACLE拣货单` 原始 `Item Details` 不再导出，改为提取 `LPN`、`Serial`、`Lot`、`COO` 四列；`LPN` 必有值，其余缺失时为空
+- `GE-ORACLE拣货单` 的 `Item Details` 遇到 `UN Number:` 后忽略之后内容，不再继续解析，也不导出 UN Number
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览字段顺序按业务确认排列：`INVOICE NO` 开头、`HAWB` 结尾
 - `GE-发票单` Excel 导出按 `DOC_PO_HEADER.xlsx` 的采购订单表头模板生成，固定值与发票字段映射自动写入
@@ -91,6 +93,9 @@ python3 "tool.py"
 
 ## 更新记录
 
+- 2026-08-22：[变更] `GE-ORACLE拣货单` `Item Details` 提取时遇到 `UN Number:` 后不再继续解析，UN Number 内容不导出。
+- 2026-08-22：[新增] `GE-ORACLE拣货单` `Item Details` 提取字段增加 `COO`，列顺序为 `LPN`、`Serial`、`Lot`、`COO`，缺失时为空。
+- 2026-08-22：[变更] `GE-ORACLE拣货单` 将原始 `Item Details` 替换为 `LPN`、`Serial`、`Lot` 三列，值从 `Item Details` 文本中提取，`LPN` 必有值，`Serial`/`Lot` 缺失时为空。
 - 2026-08-22：[变更] 「确认并导出」按钮从底部操作区移至顶部「清空/重新开始」旁边，导出逻辑不变。
 - 2026-08-22：[新增] 预览表格支持在选中行下方插入空白行，并支持选中一行或多行后整行复制/粘贴；操作入口为「插入行 / 复制行 / 粘贴行」按钮及 `Ctrl/Cmd+C / Ctrl/Cmd+V`，跨文件页签不共享复制内容。
 - 2026-08-22：[变更] `GE-发票单` 导出改为按 `DOC_PO_HEADER.xlsx` 采购订单表头模板生成，仅保留采购订单表头 Sheet，写入固定值与字段映射；`GE-ORACLE/GE-OSCAR` 仍导出识别结果列表 + 处理日志。
