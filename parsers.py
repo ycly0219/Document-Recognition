@@ -214,15 +214,13 @@ def _parse_invoice(commit_result, filename):
                         doc_date, delivery, carrier, hawb
                     ])
             elif lpn_count == 1 and qty_val > 0:
-                split_row_count = qty_val
                 single_lpn = lpn_list[0]
-                print_log(f"Serial为空，匹配LPN规则2：单LPN，QTY={qty_val}，生成{split_row_count}条")
-                for _ in range(split_row_count):
-                    rows.append([
-                        invoice_no, item_num, "1", single_lpn, "", lot, expire,
-                        country_of_origin, sales_order, customer_po,
-                        doc_date, delivery, carrier, hawb
-                    ])
+                print_log(f"Serial为空，匹配LPN规则2：单LPN，QTY={qty_val}，保留一行")
+                rows.append([
+                    invoice_no, item_num, raw_qty_str, single_lpn, "", lot, expire,
+                    country_of_origin, sales_order, customer_po,
+                    doc_date, delivery, carrier, hawb
+                ])
             else:
                 # LPN不满足拆分，原样一行
                 rows.append([
@@ -245,16 +243,14 @@ def _parse_invoice(commit_result, filename):
                     ])
             # 场景2：仅1个LPN、仅1个Serial，按QTY循环复制N行
             elif lpn_count == 1 and serial_count == 1 and qty_val > 0:
-                split_row_count = qty_val
                 single_lpn = lpn_list[0]
                 single_serial = serial_list[0]
-                print_log(f"匹配规则2：单LPN+单Serial，QTY={qty_val}，生成{split_row_count}条重复数据")
-                for _ in range(split_row_count):
-                    rows.append([
-                        invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
-                        country_of_origin, sales_order, customer_po,
-                        doc_date, delivery, carrier, hawb
-                    ])
+                print_log(f"匹配规则2：单LPN+单Serial，QTY={qty_val}，保留一行")
+                rows.append([
+                    invoice_no, item_num, raw_qty_str, single_lpn, single_serial, lot, expire,
+                    country_of_origin, sales_order, customer_po,
+                    doc_date, delivery, carrier, hawb
+                ])
             # 场景3：只有Serial多个、LPN单个，且serial_count == qty_val
             elif lpn_count == 1 and serial_count == qty_val and qty_val > 0:
                 single_lpn = lpn_list[0]

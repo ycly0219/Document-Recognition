@@ -7,6 +7,7 @@
 - 支持三种单据模板：`GE-ORACLE拣货单`、`GE-OSCAR拣货单`、`GE-发票单`
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览与 Excel 导出字段顺序按业务确认排列：`INVOICE NO` 开头、`HAWB` 结尾
+- `GE-发票单` 仅一个 LPN（或仅一个 LPN+Serial）时保留一行并写原始 QTY，不再按 QTY 重复生成多行
 - 批量选择 `png`、`jpg`、`jpeg`、`pdf` 文件，单次最多 5 个文件
 - 上传文件到内部文件服务，提交异步 OCR 任务并轮询结果
 - 按单据类型解析头部字段和明细字段
@@ -86,6 +87,7 @@ python3 "tool.py"
 
 ## 更新记录
 
+- 2026-08-22：[调整] `GE-发票单` 单 LPN/单 LPN+Serial 的不匹配拆分行改为保留一行，QTY 写入原始值，不再按 QTY 重复生成。
 - 2026-08-22：[变更] `GE-发票单` 预览与 Excel 导出字段顺序调整为：`INVOICE NO`、`ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB`。
 - 2026-08-22：[调整] 预览页签上移并只显示文件名，删除页签内重复的“当前预览文件”标签，顶部保留当前文件提示。
 - 2026-08-22：[新增] 批量预览按文件拆分页签，当前预览显示文件名；单次最多选择 5 个文件，导出改为每个有明细的文件单独生成 Excel。
