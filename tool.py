@@ -31,14 +31,19 @@ MAX_BATCH_FILES = 5
 
 
 class EditableTreeview(ttk.Treeview):
-    """支持双击编辑单元格、以及新增/删除行的 Treeview。"""
+    """支持双击编辑单元格、插入/新增/删除行以及整行复制粘贴的 Treeview。"""
 
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self._entry = None
         self._bound_item = None
         self._bound_col = None
+        self._clipboard = []
         self.bind("<Double-1>", self._start_edit)
+        for sequence in ("<Control-c>", "<Command-c>"):
+            self.bind(sequence, self._copy_shortcut)
+        for sequence in ("<Control-v>", "<Command-v>"):
+            self.bind(sequence, self._paste_shortcut)
 
     def _start_edit(self, event):
         if self.identify("region", event.x, event.y) != "cell":
@@ -79,6 +84,79 @@ class EditableTreeview(ttk.Treeview):
             self._entry = None
             self._bound_item = None
             self._bound_col = None
+
+    def _copy_shortcut(self, _event=None):
+        active_tree_copy_selected()
+        return "break"
+
+    def _paste_shortcut(self, _event=None):
+        active_tree_paste_row()
+        return "break"
+
+    def _selected_rows_in_order(self):
+        rows = self.selection()
+        if not rows:
+            return []
+        children = self.get_children()
+        position = {row_id: index for index, row_id in enumerate(children)}
+        return sorted(rows, key=lambda row_id: position.get(row_id, len(children)))
+
+    def has_clipboard(self):
+        return bool(self._clipboard)
+
+    def copy_selected(self):
+        selected = self._selected_rows_in_order()
+        if not selected:
+            self._clipboard = []
+            return False
+        headers = self["columns"]
+        self._clipboard = [
+            [self.set(row_id, col) for col in headers]
+            for row_id in selected
+        ]
+        return True
+
+    def clear_clipboard(self):
+        self._clipboard.clear()
+
+    def insert_row_after_selection(self):
+        if not self["columns"]:
+            return None
+        selected = self._selected_rows_in_order()
+        if selected:
+            children = self.get_children()
+            index = children.index(selected[-1]) + 1
+        else:
+            index = tk.END
+        row_id = self.insert(
+            "", index, values=("",) * len(self["columns"]),
+            tags=("new_row",)
+        )
+        self._renumber()
+        self.selection_set(row_id)
+        self.see(row_id)
+        return row_id
+
+    def paste_clipboard(self):
+        if not self._clipboard or not self["columns"]:
+            return False
+        selected = self._selected_rows_in_order()
+        children = self.get_children()
+        if selected:
+            index = children.index(selected[-1]) + 1
+        else:
+            index = len(children)
+        pasted = []
+        for offset, values in enumerate(self._clipboard):
+            row_id = self.insert(
+                "", index + offset, values=list(values),
+                tags=("new_row",)
+            )
+            pasted.append(row_id)
+        self._renumber()
+        self.selection_set(*pasted)
+        self.see(pasted[-1])
+        return True
 
     def add_row(self):
         if self["columns"]:
@@ -303,7 +381,10 @@ def _build_file_tab(file_result, headers):
 
     tree_frame = tk.Frame(tab)
     tree_frame.pack(fill=tk.BOTH, expand=True)
-    tree = EditableTreeview(tree_frame, style="Preview.Treeview")
+    tree = EditableTreeview(tree_frame, style="Preview.Treeview",
+                            selectmode="extended")
+    tree.bind("<<TreeviewSelect>>",
+              lambda _event: refresh_row_action_state())
     tree.tag_configure("new_row", background="#FFF3CD")
     tree.tag_configure("zebra_even", background="#FFFFFF")
     tree.tag_configure("zebra_odd", background="#EFF5F9")
@@ -363,18 +444,35 @@ def on_preview_tab_changed(_event=None):
     selected_tab = preview_notebook.select()
     for info in preview_files:
         if str(info["tab"]) == selected_tab:
+            if active_tree is not None and active_tree is not info["tree"]:
+                active_tree.clear_clipboard()
             active_tree = info["tree"]
             current_file_label.config(text=f"当前预览文件：{info['filename']}")
             refresh_export_state()
             return
+    if active_tree is not None:
+        active_tree.clear_clipboard()
     active_tree = None
     current_file_label.config(text="当前预览文件：未选择")
     refresh_export_state()
 
 
+def refresh_row_action_state():
+    """按当前选中行与复制内容刷新插入/复制/粘贴按钮。"""
+    active = active_tree is not None
+    insert_btn.config(state=tk.NORMAL if active else tk.DISABLED)
+    copy_btn.config(
+        state=tk.NORMAL if active and active_tree.selection() else tk.DISABLED
+    )
+    paste_btn.config(
+        state=tk.NORMAL if active and active_tree.has_clipboard() else tk.DISABLED
+    )
+
+
 def refresh_export_state():
-    """根据所有页签当前明细行数刷新导出按钮。"""
+    """根据所有页签当前明细行数和操作状态刷新底部按钮。"""
     has_rows = any(bool(info["tree"].get_children()) for info in preview_files)
+    refresh_row_action_state()
     export_btn.config(state=tk.NORMAL if has_rows else tk.DISABLED)
     add_btn.config(state=tk.NORMAL if active_tree else tk.DISABLED)
     del_btn.config(state=tk.NORMAL if active_tree else tk.DISABLED)
@@ -391,6 +489,27 @@ def active_tree_delete_selected():
     """在当前预览页签删除选中行并刷新导出状态。"""
     if active_tree:
         active_tree.delete_selected()
+        refresh_export_state()
+
+
+def active_tree_insert_row():
+    """在当前预览页签选中行下方插入空白行并刷新操作状态。"""
+    if active_tree:
+        active_tree.insert_row_after_selection()
+        refresh_export_state()
+
+
+def active_tree_copy_selected():
+    """复制当前预览页签选中的整行并刷新操作状态。"""
+    if active_tree:
+        active_tree.copy_selected()
+        refresh_export_state()
+
+
+def active_tree_paste_row():
+    """把当前预览页签复制的整行粘贴为新明细行并刷新操作状态。"""
+    if active_tree:
+        active_tree.paste_clipboard()
         refresh_export_state()
 
 
@@ -591,6 +710,15 @@ op_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 add_btn = tk.Button(op_frame, text="新增行", command=active_tree_add_row,
                     width=10, state=tk.DISABLED)
 add_btn.pack(side=tk.LEFT, padx=(0, 8))
+insert_btn = tk.Button(op_frame, text="插入行", command=active_tree_insert_row,
+                       width=10, state=tk.DISABLED)
+insert_btn.pack(side=tk.LEFT, padx=(0, 8))
+copy_btn = tk.Button(op_frame, text="复制行", command=active_tree_copy_selected,
+                     width=10, state=tk.DISABLED)
+copy_btn.pack(side=tk.LEFT, padx=(0, 8))
+paste_btn = tk.Button(op_frame, text="粘贴行", command=active_tree_paste_row,
+                      width=10, state=tk.DISABLED)
+paste_btn.pack(side=tk.LEFT, padx=(0, 8))
 del_btn = tk.Button(op_frame, text="删除行", command=active_tree_delete_selected,
                     width=10, state=tk.DISABLED)
 del_btn.pack(side=tk.LEFT, padx=(0, 8))
