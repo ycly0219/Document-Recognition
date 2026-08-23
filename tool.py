@@ -2,6 +2,7 @@
 
 import os
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -9,7 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 import tkinter.font as tkfont
 
 from config import MODEL_MAP
-from excel_export import export_excel
+from excel_export import export_excel, get_output_dir
 from feishu_client import get_tenant_access_token, send_to_bitable
 from logging_utils import log_queue, print_log
 from mock_data import generate_mock_data
@@ -26,7 +27,10 @@ active_tree = None
 progress_percent = 0
 progress_color = "#16A34A"
 
-PREVIEW_HEADING_FONT = ("黑体", 15, "bold")
+if sys.platform == "win32":
+    PREVIEW_HEADING_FONT = ("Microsoft YaHei UI", 10, "bold")
+else:
+    PREVIEW_HEADING_FONT = ("黑体", 15, "bold")
 MAX_BATCH_FILES = 5
 
 
@@ -555,12 +559,12 @@ def export_worker(export_targets):
     for info, rows in export_targets:
         base_name = os.path.splitext(os.path.basename(info["filename"]))[0]
         output_file = os.path.join(
-            os.getcwd(), f"{base_name}_识别结果_{timestamp}.xlsx"
+            get_output_dir(), f"{base_name}_识别结果_{timestamp}.xlsx"
         )
         suffix = 2
         while os.path.exists(output_file):
             output_file = os.path.join(
-                os.getcwd(), f"{base_name}_识别结果_{timestamp}_{suffix}.xlsx"
+                get_output_dir(), f"{base_name}_识别结果_{timestamp}_{suffix}.xlsx"
             )
             suffix += 1
         try:
@@ -698,6 +702,8 @@ preview_notebook.pack(fill=tk.BOTH, expand=True)
 preview_notebook.bind("<<NotebookTabChanged>>", on_preview_tab_changed)
 
 style = ttk.Style(win)
+if sys.platform == "win32":
+    style.theme_use("clam")
 style.configure("Preview.Treeview", background="#FFFFFF",
                 fieldbackground="#FFFFFF", rowheight=39)
 style.configure("Preview.Treeview.Heading", background="#E8EEF2",
@@ -726,4 +732,5 @@ tk.Label(win, text="处理日志", font=("黑体", 10)).pack(anchor="w", padx=12
 log_text = tk.Text(win, height=8, width=110)
 log_text.pack(fill=tk.X, padx=10, pady=(2, 10))
 
-win.mainloop()
+if __name__ == "__main__":
+    win.mainloop()

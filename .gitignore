@@ -2,3 +2,10 @@
 __pycache__/
 AGENTS.md
 *.xlsx
+!DOC_PO_HEADER.xlsx
+!DOC_SALESORDER_HEADER.xlsx
+!DOC_SALESORDER_HEADER_1.xlsx
+
+# PyInstaller outputs
+build/
+dist/

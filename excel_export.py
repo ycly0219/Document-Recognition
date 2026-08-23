@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 import time
 from copy import copy
 from datetime import date
@@ -11,17 +12,26 @@ from openpyxl import Workbook, load_workbook
 from logging_utils import print_log
 from parsers import get_core_headers
 
-PO_TEMPLATE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "DOC_PO_HEADER.xlsx"
-)
 
-SALESORDER_TEMPLATE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "DOC_SALESORDER_HEADER.xlsx"
-)
+def _resource_path(filename):
+    """返回模板文件在源码目录或 PyInstaller 解包目录中的路径。"""
+    if getattr(sys, "frozen", False):
+        base_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, filename)
 
-OSCAR_SALESORDER_TEMPLATE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "DOC_SALESORDER_HEADER_1.xlsx"
-)
+
+def get_output_dir():
+    """返回导出 Excel 的目录，打包后的 Windows 程序固定写到 exe 同目录。"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.getcwd()
+
+
+PO_TEMPLATE_PATH = _resource_path("DOC_PO_HEADER.xlsx")
+SALESORDER_TEMPLATE_PATH = _resource_path("DOC_SALESORDER_HEADER.xlsx")
+OSCAR_SALESORDER_TEMPLATE_PATH = _resource_path("DOC_SALESORDER_HEADER_1.xlsx")
 
 _DATE_PATTERN = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$")
 
@@ -149,7 +159,7 @@ _ORACLE_DATE_PATTERNS = (
         r"(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$"
     ),
     re.compile(
-        r"^(\d{1,2})-([A-Za-z]{3})-(\d{2})"
+        r"^(\d{1,2})-([A-Za-z]+)-(\d{2}|\d{4})"
         r"(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$"
     ),
 )
@@ -192,12 +202,16 @@ def _normalize_oracle_datetime(value, include_time):
         if pattern is _ORACLE_DATE_PATTERNS[0]:
             year, month, day = int(day_or_year), int(token2), int(token3)
         else:
-            month_num = _ORACLE_MONTH_NAMES.get(token2.upper())
+            month_name = token2.upper()
+            month_num = _ORACLE_MONTH_NAMES.get(month_name)
+            if month_num is None:
+                month_num = _ORACLE_MONTH_NAMES.get(month_name[:3])
             if month_num is None:
                 return text
             day = int(day_or_year)
-            two_digit_year = int(token3)
-            year = 2000 + two_digit_year if two_digit_year < 70 else 1900 + two_digit_year
+            year = int(token3)
+            if len(token3) == 2:
+                year = 2000 + year if year < 70 else 1900 + year
             month = month_num
         try:
             base = date(year, month, day).strftime("%Y-%m-%d")
@@ -310,7 +324,7 @@ def export_excel(select_text, core_data, full_log_data, output_file=None):
     """生成单个文件的识别结果 Excel，返回输出文件路径。"""
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_file = output_file or os.path.join(
-        os.getcwd(), f"GE单据OCR识别结果_{timestamp}.xlsx"
+        get_output_dir(), f"GE单据OCR识别结果_{timestamp}.xlsx"
     )
 
     if select_text == "GE-发票单":

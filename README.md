@@ -9,6 +9,7 @@
 - `GE-ORACLE拣货单` 的 `Item Details` 遇到 `UN Number:` 后忽略之后内容，不再继续解析，也不导出 UN Number
 - `GE-ORACLE拣货单` 预览字段顺序按业务确认排列：`Order Number` 开头、`Task Id` 和明细字段在前、`Delivery` 结尾
 - `GE-ORACLE拣货单` Excel 导出按 `DOC_SALESORDER_HEADER.xlsx` 的销售订单表头模板生成，仅保留模板 Sheet，按模板第 3 行映射写入固定值与识别字段
+- `GE-ORACLE拣货单` Excel 导出时 `Pick Slip Print Date` / `Ordered Date` 支持三字母缩写与完整英文月份名（如 `APR` / `APRIL`）及 2 位/4 位年份转换
 - `GE-ORACLE拣货单` Excel 导出的 `货物来源` 固定写入 `ORACLE`，`参考编号3` 取识别字段 `System Id`，`质量状态` 按 `Pick From Subinv` 后缀规则写入 `GOOD`/`BAD`
 - `GE-OSCAR拣货单` 预览字段顺序按业务确认排列：`服务申请号`、`物料编号`、`数量`、`序列号`、`货位`、`状态`、`仓库` 开头，后续为供应商、SSO、收货信息与跟踪信息
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
@@ -36,6 +37,8 @@
 - 批量处理时按文件显示处理进度条，解析结果返回预览后进度条显示完成；处理失败时进度条变红
 - 日志统一走标准 `logging`，不再覆盖标准输出
 - 代码按模块拆分：`tool.py` 作为入口，`config.py`、`logging_utils.py`、`ocr_client.py`、`parsers.py`、`feishu_client.py`、`excel_export.py`、`mock_data.py` 分别承载配置、日志、OCR、解析、飞书、导出和模拟数据
+- 支持 PyInstaller onedir 打包为 Windows 无控制台程序，Excel 模板随包分发，导出 Excel 固定写入 exe 同目录
+- Windows 打包版预览表格切换 `clam` 主题保证斑马色行背景显示，并使用 Windows 可读表头字号
 
 ## 运行环境
 
@@ -52,6 +55,21 @@ python3 -m pip install requests openpyxl
 python3 "tool.py"
 ```
 
+## Windows 打包
+
+PyInstaller 不支持跨平台编译，Windows exe 必须在 Windows 机器上构建。
+
+首次构建前安装 64 位 Python 3（建议 3.12），然后在本项目目录执行：
+
+```bat
+py -3 -m pip install -r requirements.txt
+py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
+```
+
+也可以直接运行 `build_windows.bat`。构建产物位于 `dist\GE单据OCR处理工具\GE单据OCR处理工具.exe`。
+
+本项目使用 onedir 打包，`dist\GE单据OCR处理工具` 整个目录都属于运行产物；分发时必须整体复制，不能只移动 exe。
+
 ## 使用步骤
 
 1. 选择单据模板。
@@ -59,7 +77,7 @@ python3 "tool.py"
 3. 多选需要处理的图片或 PDF，单次最多 5 个文件；超过 5 个会提示重新选择。
 4. 等待处理完成，界面日志会展示上传、OCR 提交、轮询和解析进度。
 5. 处理完成后，界面按文件显示预览页签，切换页签可查看对应文件名和明细，双击单元格修改内容，或用「新增行 / 插入行 / 删除行」调整明细；选中整行后可用「复制行 / 粘贴行」或 `Ctrl/Cmd+C / Ctrl/Cmd+V` 复制为新行。
-6. 核对无误后点击「确认并导出」，每个有明细的文件分别生成一个 Excel 写入当前工作目录，并同步飞书统计。
+6. 核对无误后点击「确认并导出」，每个有明细的文件分别生成一个 Excel 写入 exe 同目录（源码运行时为当前工作目录），并同步飞书统计。
 7. 需要处理新一批文件时，再次点击「选择文件并开始处理」并选择文件；确认选择后会自动清空上一批预览内容，取消选择或文件数超过 5 个时不执行清空。
 
 ## 输出文件
@@ -91,13 +109,17 @@ python3 "tool.py"
 - OCR 轮询参数已提取为常量，批量处理已放到后台线程；若业务需要，可继续增加取消按钮或超时配置。
 - 日志已统一改为标准 `logging`，GUI 日志通过队列由主线程刷新。
 - 空的 `HEADERS` 已移除；如上传接口后续要求鉴权，请按接口要求补充请求头。
-- Excel 输出目录使用 `os.getcwd()`，从快捷方式或不同目录启动时输出位置不稳定，建议固定到脚本目录或由用户选择目录。
+- Windows 打包使用 onedir 目录，正式分发时请整体复制 `dist\GE单据OCR处理工具`；单独移动 exe 会导致模板和依赖缺失。
 - 日志表中的“提取单据编号”和“识别报文”始终为空，建议填充真实值或删除这两列。
 - 「模拟数据」勾选框仅用于开发和演示阶段，业务稳定后建议移除该开关，全部走真实接口。
 - 当前没有自动化测试，发票 LPN/Serial 拆分逻辑建议补充单元测试。
 
 ## 更新记录
 
+- 2026-08-23：[修复] 修复 Windows 打包后预览表格斑马色失效、表头字号偏大的问题。
+- 2026-08-23：[修复] 修复 Oracle 日期为 4 位年份（如 `24-Jun-2026 21:38:28`）时未转换为 `YYYY-MM-DD HH:MM:SS` 的问题。
+- 2026-08-23：[修复] 修复 `GE-ORACLE拣货单` 导出时完整英文月份名（如 `19-APRIL-26 16:44:22`）未转换为 `YYYY-MM-DD HH:MM:SS` 的问题。
+- 2026-08-23：[新增] 支持 PyInstaller onedir Windows 打包（无控制台），Excel 模板随包分发，导出目录固定为 exe 同目录；新增 `requirements.txt`、`ge_tool.spec`、`build_windows.bat`。
 - 2026-08-23：[新增] `GE-ORACLE拣货单` Excel 导出新增 `参考编号3`、`质量状态`，并按模板第 3 行修正 `Serial`、`LPN`、`Qty`、单位、`Task Id`、库位等明细列映射。
 - 2026-08-23：[变更] `GE-OSCAR拣货单` 调整预览字段顺序，并改为按 `DOC_SALESORDER_HEADER_1.xlsx` 销售订单表头模板导出；状态为“好件”时导出 `GOOD`，其余状态置空。
 - 2026-08-23：[新增] `GE-ORACLE拣货单` Excel 导出新增 `货物来源` 字段，固定值 `ORACLE`；同步修正模板新增该列后 `Org`、`Serial`、`LPN`、`Qty` 等后续字段的写入列。
