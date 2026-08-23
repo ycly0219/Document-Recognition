@@ -8,24 +8,27 @@ def generate_mock_data(select_text):
     headers = get_core_headers(select_text)
     if select_text == "GE-ORACLE拣货单":
         rows = [
-            ["PO240821-001", "ORACLE", "2026/08/21", "P1", "AIR", "STANDARD",
+            ["PO240821-001", "T1001", "ITEM-A001", "10", "LPN-A18-480056",
+             "SN-12444", "", "CN", "A-01-01",
+             "ORACLE", "19-MAY-26", "P1", "AIR", "STANDARD",
              "SSO001", "ZHANGSAN", "GE HEALTHCARE", "CUS-1001",
-             "SHIP ASAP", "", "99999", "2026/08/21", "SYS-01",
-             "SUBINV-A", "PO-2026-001", "NO.100 ZHANGJIANG ROAD SHANGHAI",
-             "FE@GE.COM", "DEL-20260821-01",
-             "T1001", "ITEM-A001", "10", "A-01-01", "LPN-A18-480056", "SN-12444", "", "CN"],
-            ["PO240821-001", "ORACLE", "2026/08/21", "P1", "AIR", "STANDARD",
+             "NO.100 ZHANGJIANG ROAD SHANGHAI", "FE@GE.COM",
+             "SHIP ASAP", "", "99999", "19-MAY-26 16:44:22", "SYS-01",
+             "SUBINV-A", "PO-2026-001", "DEL-20260821-01"],
+            ["PO240821-001", "T1002", "ITEM-B001", "5", "LPN-B02",
+             "", "LOT-B02", "US", "B-02-03",
+             "ORACLE", "19-MAY-26", "P1", "AIR", "STANDARD",
              "SSO001", "ZHANGSAN", "GE HEALTHCARE", "CUS-1001",
-             "SHIP ASAP", "", "99999", "2026/08/21", "SYS-01",
-             "SUBINV-A", "PO-2026-001", "NO.100 ZHANGJIANG ROAD SHANGHAI",
-             "FE@GE.COM", "DEL-20260821-01",
-             "T1002", "ITEM-B001", "5", "B-02-03", "LPN-B02", "", "LOT-B02", "US"],
-            ["PO240821-002", "ORACLE", "2026/08/21", "P2", "SEA", "STANDARD",
+             "NO.100 ZHANGJIANG ROAD SHANGHAI", "FE@GE.COM",
+             "SHIP ASAP", "", "99999", "19-MAY-26 16:44:22", "SYS-01",
+             "SUBINV-A", "PO-2026-001", "DEL-20260821-01"],
+            ["PO240821-002", "T2001", "ITEM-C001", "8", "LPN-C03",
+             "SN-C03", "LOT-C03", "DE", "C-03-05",
+             "ORACLE", "19-MAY-26", "P2", "SEA", "STANDARD",
              "SSO002", "LISI", "GE HEALTHCARE", "CUS-1002",
-             "", "", "99999", "2026/08/21", "SYS-02",
-             "SUBINV-B", "PO-2026-002", "NO.200 PUJIAN ROAD SHANGHAI",
-             "FE2@GE.COM", "DEL-20260821-02",
-             "T2001", "ITEM-C001", "8", "C-03-05", "LPN-C03", "SN-C03", "LOT-C03", "DE"]
+             "NO.200 PUJIAN ROAD SHANGHAI", "FE2@GE.COM",
+             "", "", "99999", "19-MAY-26 16:44:22", "SYS-02",
+             "SUBINV-B", "PO-2026-002", "DEL-20260821-02"]
         ]
     elif select_text == "GE-OSCAR拣货单":
         rows = [

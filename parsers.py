@@ -14,9 +14,16 @@ _ITEM_DETAIL_PATTERN = re.compile(
 def get_core_headers(select_text):
     """返回各单据模板对应的预览/导出列结构。"""
     if select_text == "GE-ORACLE拣货单":
-        # Order Number后面紧跟全部新增字段
         return [
             "Order Number",
+            "Task Id",
+            "Item Number",
+            "Qty",
+            "LPN",
+            "Serial",
+            "Lot",
+            "COO",
+            "Pick From Locator",
             "OrderType",
             "Ordered Date",
             "Shipment Priority",
@@ -26,6 +33,8 @@ def get_core_headers(select_text):
             "FE Name",
             "Customer Name",
             "Customer Number",
+            "Ship To Address",
+            "Email",
             "Shipping Instruction",
             "Special Instruction",
             "Org",
@@ -33,17 +42,7 @@ def get_core_headers(select_text):
             "System Id",
             "Pick From Subinv",
             "Customer PO",
-            "Ship To Address",
-            "Email",
             "Delivery",
-            "Task Id",
-            "Item Number",
-            "Qty",
-            "Pick From Locator",
-            "LPN",
-            "Serial",
-            "Lot",
-            "COO"
         ]
     elif select_text == "GE-OSCAR拣货单":
         return [
@@ -107,9 +106,17 @@ def _parse_oracle_picklist(commit_result, filename):
         for label, value in _ITEM_DETAIL_PATTERN.findall(item_detail):
             trace_values[label] = value.strip()
 
-        # Order Number后面拼接全部新增字段
+        # 按 get_core_headers 的预览列顺序拼接字段
         rows.append([
             order_number,
+            task_id,
+            item_no,
+            qty,
+            trace_values["LPN"],
+            trace_values["Serial"],
+            trace_values["Lot"],
+            trace_values["COO"],
+            pick_loc,
             order_type,
             ordered_date,
             shipment_priority,
@@ -119,6 +126,8 @@ def _parse_oracle_picklist(commit_result, filename):
             fe_name,
             customer_name,
             customer_number,
+            ship_addr,
+            email,
             shipping_instruction,
             special_instruction,
             org,
@@ -126,17 +135,7 @@ def _parse_oracle_picklist(commit_result, filename):
             system_id,
             pick_from_subinv,
             customer_po,
-            ship_addr,
-            email,
             delivery,
-            task_id,
-            item_no,
-            qty,
-            pick_loc,
-            trace_values["LPN"],
-            trace_values["Serial"],
-            trace_values["Lot"],
-            trace_values["COO"]
         ])
     return rows
 

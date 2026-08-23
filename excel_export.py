@@ -15,6 +15,10 @@ PO_TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "DOC_PO_HEADER.xlsx"
 )
 
+SALESORDER_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "DOC_SALESORDER_HEADER.xlsx"
+)
+
 _DATE_PATTERN = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$")
 
 _INVOICE_FIXED_VALUES = {
@@ -43,6 +47,65 @@ _INVOICE_DYNAMIC_COLUMNS = {
     "AL": 9,  # CUSTOMER PO
 }
 
+_SALESORDER_FIXED_VALUES = {
+    "A": "WH004078",
+    "B": "00",
+    "C": "JYCK",
+    "E": "Y",
+    "F": "GEHC",
+    "V": "CONSIGNEEID",
+    "AE": "WH004078",
+    "AF": "GEHC",
+    "AH": "00",
+    "AN": "EA",
+    "AO": "HD78_E841_01",
+    "AP": "HD78_E841_01",
+    "AQ": "0",
+    "AR": "0",
+    "AS": "0",
+    "AT": "0",
+}
+
+_SALESORDER_DYNAMIC_COLUMNS = {
+    "D": 23,   # Pick Slip Print Date
+    "G": 0,    # Order Number
+    "L": 9,    # OrderType
+    "M": 10,   # Ordered Date
+    "N": 11,   # Shipment Priority
+    "O": 12,   # Ship Method
+    "P": 13,   # Service Level
+    "Q": 14,   # FE SSO
+    "R": 15,   # FE Name
+    "S": 20,   # Shipping Instruction
+    "T": 21,   # Special Instruction
+    "U": 25,   # Pick From Subinv
+    "W": 18,   # Ship To Address
+    "AG": 2,   # Item Number
+    "AI": 6,   # Lot
+    "AJ": 22,  # Org
+    "AK": 5,   # Serial
+    "AL": 4,   # LPN
+    "AM": 3,   # Qty
+    "AU": 1,   # Task Id
+    "AW": 8,   # Pick From Locator
+}
+
+_ORACLE_MONTH_NAMES = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+_ORACLE_DATE_PATTERNS = (
+    re.compile(
+        r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})"
+        r"(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$"
+    ),
+    re.compile(
+        r"^(\d{1,2})-([A-Za-z]{3})-(\d{2})"
+        r"(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$"
+    ),
+)
+
 
 def _row_value(row, index):
     """读取预览行字段，兼容界面手工新增的不完整行。"""
@@ -62,6 +125,69 @@ def _normalize_expiration_date(value):
         return date(year, month, day).strftime("%Y-%m-%d")
     except ValueError:
         return text
+
+
+def _normalize_oracle_datetime(value, include_time):
+    """把 Oracle 日期样例转换为销售订单模板要求的格式。"""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    for pattern in _ORACLE_DATE_PATTERNS:
+        match = pattern.fullmatch(text)
+        if not match:
+            continue
+        day_or_year = match.group(1)
+        token2 = match.group(2)
+        token3 = match.group(3)
+        if pattern is _ORACLE_DATE_PATTERNS[0]:
+            year, month, day = int(day_or_year), int(token2), int(token3)
+        else:
+            month_num = _ORACLE_MONTH_NAMES.get(token2.upper())
+            if month_num is None:
+                return text
+            day = int(day_or_year)
+            two_digit_year = int(token3)
+            year = 2000 + two_digit_year if two_digit_year < 70 else 1900 + two_digit_year
+            month = month_num
+        try:
+            base = date(year, month, day).strftime("%Y-%m-%d")
+        except ValueError:
+            return text
+        if match.group(4):
+            time_text = f"{int(match.group(4)):02d}:{match.group(5)}"
+            if match.group(6):
+                time_text += f":{match.group(6)}"
+            return f"{base} {time_text}" if include_time else base
+        return f"{base} 00:00:00" if include_time else base
+    return text
+
+
+def _export_oracle_salesorder_template(core_data, output_file):
+    """按 DOC_SALESORDER_HEADER 的销售订单表头模板导出售后单数据。"""
+    wb = load_workbook(SALESORDER_TEMPLATE_PATH)
+    ws = wb["0"]
+    del wb["系统代码说明"]
+
+    for row_index, preview_row in enumerate(core_data, start=3):
+        if row_index > 3:
+            for col_index in range(1, ws.max_column + 1):
+                template_cell = ws.cell(row=3, column=col_index)
+                target_cell = ws.cell(row=row_index, column=col_index)
+                target_cell._style = copy(template_cell._style)
+
+        for col_name, value in _SALESORDER_FIXED_VALUES.items():
+            ws[f"{col_name}{row_index}"] = value
+        for col_name, source_index in _SALESORDER_DYNAMIC_COLUMNS.items():
+            value = _row_value(preview_row, source_index)
+            if col_name == "D":
+                value = _normalize_oracle_datetime(value, include_time=True)
+            elif col_name == "M":
+                value = _normalize_oracle_datetime(value, include_time=False)
+            ws[f"{col_name}{row_index}"] = value
+
+    wb.save(output_file)
 
 
 def _export_invoice_po_template(core_data, output_file):
@@ -102,6 +228,10 @@ def export_excel(select_text, core_data, full_log_data, output_file=None):
 
     if select_text == "GE-发票单":
         _export_invoice_po_template(core_data, output_file)
+        print_log(f"Excel导出完成，路径：{output_file}")
+        return output_file
+    if select_text == "GE-ORACLE拣货单":
+        _export_oracle_salesorder_template(core_data, output_file)
         print_log(f"Excel导出完成，路径：{output_file}")
         return output_file
 

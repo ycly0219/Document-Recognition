@@ -241,6 +241,7 @@ def run_task():
             )
             return
 
+    clear_preview()
     btn.config(text="正在处理...", state=tk.DISABLED)
     mock_check.config(state=tk.DISABLED)
     set_progress_state(50, "处理进度：已开始（50%）")
@@ -428,9 +429,8 @@ def show_preview(select_text, headers, file_results,
     if preview_notebook.tabs():
         preview_notebook.select(0)
     on_preview_tab_changed()
-    mock_check.config(state=tk.DISABLED)
-    btn.config(text="预览中", state=tk.DISABLED)
-    clear_btn.config(state=tk.NORMAL)
+    mock_check.config(state=tk.NORMAL)
+    btn.config(text="选择文件并开始处理", state=tk.NORMAL)
     total_rows = sum(len(info["tree"].get_children()) for info in preview_files)
     print_log(f"预览数据就绪：模板 {select_text}，页签数 {len(preview_files)}，"
               f"明细行数 {total_rows}，"
@@ -524,7 +524,6 @@ def clear_preview():
     current_file_label.config(text="当前预览文件：未选择")
     refresh_export_state()
     set_progress_state(0, "处理进度：待开始")
-    clear_btn.config(state=tk.DISABLED)
     btn.config(text="选择文件并开始处理", state=tk.NORMAL)
     mock_check.config(state=tk.NORMAL)
 
@@ -670,9 +669,6 @@ mock_check.pack(side=tk.LEFT, padx=(0, 20))
 btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width=22,
                 bg="#4CAF50", fg="#0B3D0F", font=("黑体", 11))
 btn.pack(side=tk.LEFT)
-clear_btn = tk.Button(top, text="清空/重新开始", command=clear_preview,
-                      width=14, state=tk.DISABLED)
-clear_btn.pack(side=tk.LEFT, padx=(0, 8))
 export_btn = tk.Button(top, text="确认并导出", command=start_export,
                        width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
 export_btn.pack(side=tk.LEFT)
