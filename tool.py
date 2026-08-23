@@ -10,7 +10,12 @@ from tkinter import filedialog, messagebox, ttk
 import tkinter.font as tkfont
 
 from config import MODEL_MAP
-from excel_export import export_excel, get_output_dir
+from excel_export import (
+    export_excel,
+    get_last_export_dir,
+    get_output_dir,
+    save_last_export_dir,
+)
 from feishu_client import get_tenant_access_token, send_to_bitable
 from logging_utils import log_queue, print_log
 from mock_data import generate_mock_data
@@ -274,6 +279,13 @@ def process_batch_worker(files, select_text, current_model_id, mock_mode):
         ui_message_queue.put(("processing_error", f"处理流程异常: {str(e)}"))
 
 
+def _send_feishu_statistics(select_text, total_files):
+    """后台发送本批次飞书统计，失败只记录日志。"""
+    print_log("开始同步统计数据至飞书多维表格...")
+    token = get_tenant_access_token()
+    send_to_bitable(token, select_text, total_files)
+
+
 def process_batch(files, select_text, current_model_id):
     """逐文件执行 OCR 处理，按文件组织预览结果并通过队列回传 UI。"""
     total_files = len(files)
@@ -331,9 +343,11 @@ def process_batch(files, select_text, current_model_id):
 
     print_log(f"\n===== 批量处理结束 =====")
     print_log(f"总文件：{total_files} | 成功：{success_count} | 失败：{fail_count} | 有效明细行数：{len(core_data)}")
-    print_log("开始同步统计数据至飞书多维表格...")
-    token = get_tenant_access_token()
-    send_to_bitable(token, select_text, total_files)
+    threading.Thread(
+        target=_send_feishu_statistics,
+        args=(select_text, total_files),
+        daemon=True,
+    ).start()
 
     ui_message_queue.put(("preview", select_text,
                           get_core_headers(select_text), file_results,
@@ -533,7 +547,7 @@ def clear_preview():
 
 
 def start_export():
-    """收集所有有明细的文件页签并启动批量导出线程。"""
+    """选择导出目录后收集有明细的文件页签并启动批量导出线程。"""
     export_targets = []
     for info in preview_files:
         _, rows = info["tree"].get_data()
@@ -542,29 +556,38 @@ def start_export():
     if not export_targets:
         messagebox.showwarning("温馨提示", "没有可导出的明细数据")
         return
+    last_dir = get_last_export_dir()
+    initial_dir = last_dir if last_dir and os.path.isdir(last_dir) else get_output_dir()
+    output_dir = filedialog.askdirectory(
+        title="选择Excel导出目录",
+        initialdir=initial_dir,
+    )
+    if not output_dir:
+        return
+    save_last_export_dir(output_dir)
     export_btn.config(state=tk.DISABLED)
     global export_thread
     export_thread = threading.Thread(
-        target=export_worker, args=(export_targets,), daemon=True
+        target=export_worker, args=(export_targets, output_dir), daemon=True
     )
     export_thread.start()
     win.after(100, poll_ui_queue)
 
 
-def export_worker(export_targets):
-    """后台逐文件导出 Excel，汇总成功和失败消息。"""
+def export_worker(export_targets, output_dir):
+    """后台逐文件导出 Excel 到指定目录，汇总成功和失败消息。"""
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     exported = []
     failures = []
     for info, rows in export_targets:
         base_name = os.path.splitext(os.path.basename(info["filename"]))[0]
         output_file = os.path.join(
-            get_output_dir(), f"{base_name}_识别结果_{timestamp}.xlsx"
+            output_dir, f"{base_name}_识别结果_{timestamp}.xlsx"
         )
         suffix = 2
         while os.path.exists(output_file):
             output_file = os.path.join(
-                get_output_dir(), f"{base_name}_识别结果_{timestamp}_{suffix}.xlsx"
+                output_dir, f"{base_name}_识别结果_{timestamp}_{suffix}.xlsx"
             )
             suffix += 1
         try:
@@ -675,7 +698,7 @@ btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width
 btn.pack(side=tk.LEFT)
 export_btn = tk.Button(top, text="确认并导出", command=start_export,
                        width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
-export_btn.pack(side=tk.LEFT)
+export_btn.pack(side=tk.LEFT, padx=(8, 0))
 
 progress_frame = tk.Frame(win)
 progress_frame.pack(fill=tk.X, padx=10, pady=(8, 0))

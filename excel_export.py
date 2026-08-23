@@ -23,10 +23,32 @@ def _resource_path(filename):
 
 
 def get_output_dir():
-    """返回导出 Excel 的目录，打包后的 Windows 程序固定写到 exe 同目录。"""
+    """返回没有历史记录时目录选择框默认打开的导出目录。"""
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.getcwd()
+
+
+EXPORT_DIR_STATE_FILE = os.path.expanduser("~/.ge_tool_export_dir")
+
+
+def get_last_export_dir():
+    """返回上次人工选择的导出目录，没有记录或不可读时返回 None。"""
+    try:
+        with open(EXPORT_DIR_STATE_FILE, encoding="utf-8") as state_file:
+            export_dir = state_file.read().strip()
+    except OSError:
+        return None
+    return export_dir or None
+
+
+def save_last_export_dir(export_dir):
+    """保存上次人工选择的导出目录，供下次启动作为默认位置。"""
+    try:
+        with open(EXPORT_DIR_STATE_FILE, "w", encoding="utf-8") as state_file:
+            state_file.write(export_dir)
+    except OSError:
+        print_log("导出目录未能保存，下次启动不会记住")
 
 
 PO_TEMPLATE_PATH = _resource_path("DOC_PO_HEADER.xlsx")
