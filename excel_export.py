@@ -19,6 +19,10 @@ SALESORDER_TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "DOC_SALESORDER_HEADER.xlsx"
 )
 
+OSCAR_SALESORDER_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "DOC_SALESORDER_HEADER_1.xlsx"
+)
+
 _DATE_PATTERN = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$")
 
 _INVOICE_FIXED_VALUES = {
@@ -57,18 +61,20 @@ _SALESORDER_FIXED_VALUES = {
     "AE": "WH004078",
     "AF": "GEHC",
     "AH": "00",
-    "AN": "EA",
-    "AO": "HD78_E841_01",
-    "AP": "HD78_E841_01",
-    "AQ": "0",
-    "AR": "0",
+    "AJ": "ORACLE",  # 货物来源
+    "AP": "EA",
+    "AQ": "HD78_E841_01",
+    "AR": "HD78_E841_01",
     "AS": "0",
     "AT": "0",
+    "AU": "0",
+    "AV": "0",
 }
 
 _SALESORDER_DYNAMIC_COLUMNS = {
     "D": 23,   # Pick Slip Print Date
     "G": 0,    # Order Number
+    "I": 24,   # System Id -> 参考编号3
     "L": 9,    # OrderType
     "M": 10,   # Ordered Date
     "N": 11,   # Shipment Priority
@@ -82,12 +88,54 @@ _SALESORDER_DYNAMIC_COLUMNS = {
     "W": 18,   # Ship To Address
     "AG": 2,   # Item Number
     "AI": 6,   # Lot
-    "AJ": 22,  # Org
-    "AK": 5,   # Serial
-    "AL": 4,   # LPN
-    "AM": 3,   # Qty
-    "AU": 1,   # Task Id
-    "AW": 8,   # Pick From Locator
+    "AK": 22,  # Org
+    "AL": 25,  # Pick From Subinv -> 质量状态
+    "AM": 5,   # Serial
+    "AN": 4,   # LPN
+    "AO": 3,   # Qty
+    "AW": 1,   # Task Id
+    "AY": 8,   # Pick From Locator
+}
+
+_OSCAR_FIXED_VALUES = {
+    "A": "WH004078",
+    "B": "00",
+    "C": "JYCK",
+    "E": "Y",
+    "F": "GEHC",
+    "Z": "CONSIGNEEID",
+    "AI": "WH004078",
+    "AJ": "GEHC",
+    "AL": "00",
+    "AN": "OSCAR",  # 货物来源
+    "AT": "EA",
+    "AU": "HD78_E841_01",
+    "AV": "HD78_E841_01",
+    "AW": "0",
+    "AX": "0",
+    "AY": "0",
+    "AZ": "0",
+}
+
+_OSCAR_DYNAMIC_COLUMNS = {
+    "G": 0,    # 服务申请号
+    "H": 16,   # SR编号
+    "I": 15,   # 客户设备id
+    "P": 12,   # 时效
+    "Q": 8,    # SSO
+    "V": 7,    # 供应商
+    "W": 9,    # 收货人
+    "X": 10,   # 姓名
+    "Y": 13,   # 收货人电话
+    "AA": 11,  # 收货地址
+    "AB": 14,  # 申请说明
+    "AK": 1,   # 物料编号
+    "AO": 6,   # 仓库
+    "AP": 5,   # 状态: 好件->GOOD
+    "AQ": 3,   # 序列号
+    "AS": 2,   # 数量
+    "BB": 17,  # 跟踪号
+    "BC": 4,   # 货位
 }
 
 _ORACLE_MONTH_NAMES = {
@@ -164,6 +212,16 @@ def _normalize_oracle_datetime(value, include_time):
     return text
 
 
+def _oracle_quality_status(pick_from_subinv):
+    """按模板规则把 Pick From Subinv 后缀转换为质量状态。"""
+    text = str(pick_from_subinv).strip().upper()
+    if text.endswith("GD"):
+        return "GOOD"
+    if text.endswith("BAD"):
+        return "BAD"
+    return ""
+
+
 def _export_oracle_salesorder_template(core_data, output_file):
     """按 DOC_SALESORDER_HEADER 的销售订单表头模板导出售后单数据。"""
     wb = load_workbook(SALESORDER_TEMPLATE_PATH)
@@ -185,6 +243,35 @@ def _export_oracle_salesorder_template(core_data, output_file):
                 value = _normalize_oracle_datetime(value, include_time=True)
             elif col_name == "M":
                 value = _normalize_oracle_datetime(value, include_time=False)
+            elif col_name == "AL":
+                value = _oracle_quality_status(value)
+            ws[f"{col_name}{row_index}"] = value
+
+    wb.save(output_file)
+
+
+def _export_oscar_salesorder_template(core_data, output_file):
+    """按 DOC_SALESORDER_HEADER_1 的销售订单表头模板导出OSCAR拣货单数据。"""
+    wb = load_workbook(OSCAR_SALESORDER_TEMPLATE_PATH)
+    ws = wb["0"]
+    del wb["系统代码说明"]
+
+    creation_time = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    for row_index, preview_row in enumerate(core_data, start=3):
+        if row_index > 3:
+            for col_index in range(1, ws.max_column + 1):
+                template_cell = ws.cell(row=3, column=col_index)
+                target_cell = ws.cell(row=row_index, column=col_index)
+                target_cell._style = copy(template_cell._style)
+
+        ws[f"D{row_index}"] = creation_time
+        for col_name, value in _OSCAR_FIXED_VALUES.items():
+            ws[f"{col_name}{row_index}"] = value
+        for col_name, source_index in _OSCAR_DYNAMIC_COLUMNS.items():
+            value = _row_value(preview_row, source_index)
+            if col_name == "AP":
+                value = "GOOD" if str(value).strip() == "好件" else ""
             ws[f"{col_name}{row_index}"] = value
 
     wb.save(output_file)
@@ -232,6 +319,10 @@ def export_excel(select_text, core_data, full_log_data, output_file=None):
         return output_file
     if select_text == "GE-ORACLE拣货单":
         _export_oracle_salesorder_template(core_data, output_file)
+        print_log(f"Excel导出完成，路径：{output_file}")
+        return output_file
+    if select_text == "GE-OSCAR拣货单":
+        _export_oscar_salesorder_template(core_data, output_file)
         print_log(f"Excel导出完成，路径：{output_file}")
         return output_file
 

@@ -9,6 +9,9 @@
 - `GE-ORACLE拣货单` 的 `Item Details` 遇到 `UN Number:` 后忽略之后内容，不再继续解析，也不导出 UN Number
 - `GE-ORACLE拣货单` 预览字段顺序按业务确认排列：`Order Number` 开头、`Task Id` 和明细字段在前、`Delivery` 结尾
 - `GE-ORACLE拣货单` Excel 导出按 `DOC_SALESORDER_HEADER.xlsx` 的销售订单表头模板生成，仅保留模板 Sheet，按模板第 3 行映射写入固定值与识别字段
+- `GE-ORACLE拣货单` Excel 导出的 `货物来源` 固定写入 `ORACLE`，`参考编号3` 取识别字段 `System Id`，`质量状态` 按 `Pick From Subinv` 后缀规则写入 `GOOD`/`BAD`
+- `GE-OSCAR拣货单` 预览字段顺序按业务确认排列：`服务申请号`、`物料编号`、`数量`、`序列号`、`货位`、`状态`、`仓库` 开头，后续为供应商、SSO、收货信息与跟踪信息
+- `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览字段顺序按业务确认排列：`INVOICE NO` 开头、`HAWB` 结尾
 - `GE-发票单` Excel 导出按 `DOC_PO_HEADER.xlsx` 的采购订单表头模板生成，固定值与发票字段映射自动写入
@@ -26,7 +29,7 @@
 - 预览表格行高加高并使用隔行斑马纹显示，便于现场逐行核对
 - 预览表格标题加粗放大显示，并按标题字体自动撑开列宽避免裁切
 - 处理失败的文件也保留预览页签并显示失败原因；解析成功返回预览时即写入飞书统计
-- 人工点击「确认并导出」后，每个有明细的文件单独生成一个 Excel；`GE-发票单` 按采购订单表头模板导出，`GE-ORACLE拣货单` 按销售订单表头模板导出，`GE-OSCAR拣货单` 仍导出识别结果列表 + 当前文件处理日志，无明细文件跳过
+- 人工点击「确认并导出」后，每个有明细的文件单独生成一个 Excel；`GE-发票单` 按采购订单表头模板导出，`GE-ORACLE拣货单` 和 `GE-OSCAR拣货单` 按销售订单表头模板导出，无明细文件跳过
 - 新增「模拟数据」勾选框，不调用真实接口即可演示预览、编辑、导出流程
 - 批量统计写入飞书多维表格
 - 批量处理在后台线程执行，通过消息队列刷新界面日志，不会长时间冻结窗口
@@ -67,7 +70,7 @@ python3 "tool.py"
 原文件名_识别结果_YYYYMMDD_HHMMSS.xlsx
 ```
 
-每个文件单独导出。`GE-发票单` 输出一个 `采购订单表头` Sheet；`GE-ORACLE拣货单` 输出一个模板 Sheet `0`，两者明细均从第 3 行开始逐行写入，分别按 `DOC_PO_HEADER.xlsx`、`DOC_SALESORDER_HEADER.xlsx` 模板生成；其余单据包含两个 Sheet：
+每个文件单独导出。`GE-发票单` 输出一个 `采购订单表头` Sheet；`GE-ORACLE拣货单` 和 `GE-OSCAR拣货单` 输出一个模板 Sheet `0`，三者明细均从第 3 行开始逐行写入，分别按 `DOC_PO_HEADER.xlsx`、`DOC_SALESORDER_HEADER.xlsx`、`DOC_SALESORDER_HEADER_1.xlsx` 模板生成；其余单据包含两个 Sheet：
 
 - `识别结果列表`：每个明细生成一行。
 - `处理日志`：记录当前文件对应的文件名、`fileId`、文件 URL、`reqUuid`、状态和异常信息。其中“提取单据编号”和“识别报文”字段当前为预留空列。
@@ -95,6 +98,9 @@ python3 "tool.py"
 
 ## 更新记录
 
+- 2026-08-23：[新增] `GE-ORACLE拣货单` Excel 导出新增 `参考编号3`、`质量状态`，并按模板第 3 行修正 `Serial`、`LPN`、`Qty`、单位、`Task Id`、库位等明细列映射。
+- 2026-08-23：[变更] `GE-OSCAR拣货单` 调整预览字段顺序，并改为按 `DOC_SALESORDER_HEADER_1.xlsx` 销售订单表头模板导出；状态为“好件”时导出 `GOOD`，其余状态置空。
+- 2026-08-23：[新增] `GE-ORACLE拣货单` Excel 导出新增 `货物来源` 字段，固定值 `ORACLE`；同步修正模板新增该列后 `Org`、`Serial`、`LPN`、`Qty` 等后续字段的写入列。
 - 2026-08-23：[变更] 移除「清空/重新开始」按钮；再次点击「选择文件并开始处理」并选择有效文件后，自动清空上一批预览内容再开始新批次。
 - 2026-08-22：[变更] `GE-ORACLE拣货单` 预览字段顺序调整为：`Order Number`、`Task Id`、`Item Number`、`Qty`、`LPN`、`Serial`、`Lot`、`COO`、`Pick From Locator` 开头，后续按业务字段排列并以 `Delivery` 结尾。
 - 2026-08-22：[变更] `GE-ORACLE拣货单` 导出改按 `DOC_SALESORDER_HEADER.xlsx` 销售订单表头模板生成，仅保留模板 Sheet，按第 3 行映射写入固定值、识别字段，并转换 `Pick Slip Print Date` / `Ordered Date` 格式。

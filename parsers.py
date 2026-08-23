@@ -46,10 +46,10 @@ def get_core_headers(select_text):
         ]
     elif select_text == "GE-OSCAR拣货单":
         return [
-            "服务申请号", "SR编号", "供应商", "SSO", "收货地址",
-            "时效", "收货人电话", "申请说明",
-            "收货人", "姓名", "客户设备id",
-            "物料编号", "数量", "序列号", "跟踪号", "货位", "状态", "仓库"
+            "服务申请号", "物料编号", "数量", "序列号", "货位",
+            "状态", "仓库", "供应商", "SSO", "收货人",
+            "姓名", "收货地址", "时效", "收货人电话", "申请说明",
+            "客户设备id", "SR编号", "跟踪号"
         ]
     elif select_text == "GE-发票单":
         # 列头顺序同时用于预览表格与 Excel 导出
@@ -173,10 +173,10 @@ def _parse_oscar_picklist(commit_result, filename):
         warehouse = item.get("仓库", {}).get("value", "").strip()
 
         rows.append([
-            service_apply_no, sr_no, supplier, sso, ship_addr,
-            lead_time, consignee_tel, apply_note,
-            consignee_name, real_name, cust_device_id,
-            mat_no, qty, serial_no, track_no, locator, status_val, warehouse
+            service_apply_no, mat_no, qty, serial_no, locator, status_val,
+            warehouse, supplier, sso, consignee_name, real_name, ship_addr,
+            lead_time, consignee_tel, apply_note, cust_device_id, sr_no,
+            track_no,
         ])
     return rows
 

@@ -32,18 +32,21 @@ def generate_mock_data(select_text):
         ]
     elif select_text == "GE-OSCAR拣货单":
         rows = [
-            ["SA20260821-01", "SR-001", "GE SUPPLIER", "SSO-OSC-01",
-             "NO.1 SUPPLY ROAD SHANGHAI", "24H", "13800000001", "APPLICATION NOTE",
-             "RECEIVER-01", "LI SI", "DEVICE-001",
-             "MT-OSC-001", "12", "SN-0001", "TR-0001", "LOC-01", "TO RECEIVE", "WH-A"],
-            ["SA20260821-01", "SR-001", "GE SUPPLIER", "SSO-OSC-01",
-             "NO.1 SUPPLY ROAD SHANGHAI", "24H", "13800000001", "APPLICATION NOTE",
-             "RECEIVER-01", "LI SI", "DEVICE-001",
-             "MT-OSC-002", "6", "SN-0002", "TR-0002", "LOC-02", "TO RECEIVE", "WH-A"],
-            ["SA20260821-02", "SR-002", "GE SUPPLIER", "SSO-OSC-02",
-             "NO.2 SUPPLY ROAD SHANGHAI", "48H", "13900000002", "APPLICATION NOTE 2",
-             "RECEIVER-02", "WANG WU", "DEVICE-002",
-             "MT-OSC-003", "3", "SN-0003", "TR-0003", "LOC-03", "PICKED", "WH-B"]
+            ["SA20260821-01", "MT-OSC-001", "12", "SN-0001", "LOC-01",
+             "好件", "WH-A", "GE SUPPLIER", "SSO-OSC-01",
+             "RECEIVER-01", "LI SI", "NO.1 SUPPLY ROAD SHANGHAI",
+             "24H", "13800000001", "APPLICATION NOTE",
+             "DEVICE-001", "SR-001", "TR-0001"],
+            ["SA20260821-01", "MT-OSC-002", "6", "SN-0002", "LOC-02",
+             "PICKED", "WH-A", "GE SUPPLIER", "SSO-OSC-01",
+             "RECEIVER-01", "LI SI", "NO.1 SUPPLY ROAD SHANGHAI",
+             "24H", "13800000001", "APPLICATION NOTE",
+             "DEVICE-001", "SR-001", "TR-0002"],
+            ["SA20260821-02", "MT-OSC-003", "3", "SN-0003", "LOC-03",
+             "好件", "WH-B", "GE SUPPLIER", "SSO-OSC-02",
+             "RECEIVER-02", "WANG WU", "NO.2 SUPPLY ROAD SHANGHAI",
+             "48H", "13900000002", "APPLICATION NOTE 2",
+             "DEVICE-002", "SR-002", "TR-0003"]
         ]
     elif select_text == "GE-发票单":
         # 前两行演示 LPN/Serial 按数量拆分后的效果

@@ -18,8 +18,12 @@
 - **当前预览文件（Active Preview File）**：当前选中的文件页签对应的文件名和处理状态，界面会同步展示。
 - **单文件导出（Per-File Export）**：确认导出时为每个有明细的文件单独生成一个 Excel；无明细文件跳过。
 - **采购订单表头模板（PO Header Template）**：`GE-发票单` 导出时复用的 Excel 结构，用于生成采购订单表头文件。
-- **销售订单表头模板（Sales Order Header Template）**：`GE-ORACLE拣货单` 导出时复用的 Excel 结构，用于生成销售订单表头文件。
+- **销售订单表头模板（Sales Order Header Template）**：`GE-ORACLE拣货单` 和 `GE-OSCAR拣货单` 导出时复用的 Excel 结构，用于生成销售订单表头文件。
 - **固定值（Fixed Value）**：模板导出时按模板写入的常量业务值，例如仓库编号、订单类型、货主、单位、质量状态。
+- **货物来源（Goods Source）**：GE-ORACLE 拣货单明细行上的来源标识；当前业务口径固定为 `ORACLE`。
+- **参考编号3（Reference #3）**：销售订单模板中的第三个参考编号；GE-ORACLE 拣货单场景对应接口的系统编号。
+- **质量状态（Quality Status）**：GE-ORACLE 拣货单物料的质量分类；按仓库子库后缀识别为 `GOOD` 或 `BAD`。
+- **好件（Good Unit）**：GE-OSCAR 拣货单中可正常发货的物料状态；导出质量状态时写入 `GOOD`，非好件状态导出为空。
 - **LPN**：GE-ORACLE 拣货单明细中的物流容器/托盘编号；在物料明细信息中必有值。
 - **Serial**：GE-ORACLE 拣货单明细中的物料序列号；在物料明细信息中可能缺失。
 - **Lot**：GE-ORACLE 拣货单明细中的物料批号；在物料明细信息中可能缺失。
