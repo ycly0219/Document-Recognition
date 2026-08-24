@@ -320,7 +320,7 @@ def _export_invoice_po_template(core_data, output_file):
     del wb["系统代码说明"]
 
     now = time.localtime()
-    creation_time = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} " \
+    creation_time = f"{now.tm_year}-{now.tm_mon}-{now.tm_mday} " \
                     f"{time.strftime('%H:%M:%S', now)}"
 
     for row_index, preview_row in enumerate(core_data, start=3):
