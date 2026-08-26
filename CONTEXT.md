@@ -32,5 +32,7 @@
 - **Serial**：GE-ORACLE 拣货单明细中的物料序列号；在物料明细信息中可能缺失。
 - **Lot**：GE-ORACLE 拣货单明细中的物料批号；在物料明细信息中可能缺失。
 - **COO**：GE-ORACLE 拣货单明细中的原产地（Country of Origin）；在物料明细信息中可能缺失。
+- **收货地址（Ship To Address）**：GE-ORACLE 拣货单中的收货方地址，属于单据头部收货方信息。
+- **SHIP TO NO（收货方编号）**：GE-ORACLE 拣货单中由 OCR 识别结果提供的收货方编号，与收货地址共同构成收货方信息。
 - **UN Number**：GE-ORACLE 拣货单物料明细信息中可能出现的危险品编号，不进入导出的追溯标识字段。
 - **物料明细信息（Item Details）**：GE-ORACLE 拣货单明细中携带 LPN、Serial、Lot、COO 的标识文本；有值的字段有且仅有一个值。

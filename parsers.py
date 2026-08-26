@@ -33,6 +33,7 @@ def get_core_headers(select_text):
             "FE Name",
             "Customer Name",
             "Customer Number",
+            "SHIP TO NO",
             "Ship To Address",
             "Email",
             "Shipping Instruction",
@@ -82,6 +83,7 @@ def _parse_oracle_picklist(commit_result, filename):
     customer_po = commit_result.get("Customer PO", {}).get("value", "").strip()
 
     ship_addr = commit_result.get("Ship To Address", {}).get("value", "").strip()
+    ship_to_no = commit_result.get("SHIP TO NO", {}).get("value", "").strip()
     email = commit_result.get("Email", {}).get("value", "").strip()
     delivery = commit_result.get("Delivery", {}).get("value", "").strip()
     material_list = commit_result.get("物料信息", {}).get("content", [])
@@ -126,6 +128,7 @@ def _parse_oracle_picklist(commit_result, filename):
             fe_name,
             customer_name,
             customer_number,
+            ship_to_no,
             ship_addr,
             email,
             shipping_instruction,

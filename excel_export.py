@@ -104,9 +104,9 @@ _SALESORDER_FIXED_VALUES = {
 }
 
 _SALESORDER_DYNAMIC_COLUMNS = {
-    "D": 23,   # Pick Slip Print Date
+    "D": 24,   # Pick Slip Print Date
     "G": 0,    # Order Number
-    "I": 24,   # System Id -> 参考编号3
+    "I": 25,   # System Id -> 参考编号3
     "L": 9,    # OrderType
     "M": 10,   # Ordered Date
     "N": 11,   # Shipment Priority
@@ -114,14 +114,15 @@ _SALESORDER_DYNAMIC_COLUMNS = {
     "P": 13,   # Service Level
     "Q": 14,   # FE SSO
     "R": 15,   # FE Name
-    "S": 20,   # Shipping Instruction
-    "T": 21,   # Special Instruction
-    "U": 25,   # Pick From Subinv
-    "W": 18,   # Ship To Address
+    "S": 21,   # Shipping Instruction
+    "T": 22,   # Special Instruction
+    "U": 26,   # Pick From Subinv
+    "W": 19,   # Ship To Address
+    "Y": 18,   # SHIP TO NO -> udf01
     "AG": 2,   # Item Number
     "AI": 6,   # Lot
-    "AK": 22,  # Org
-    "AL": 25,  # Pick From Subinv -> 质量状态
+    "AK": 23,  # Org
+    "AL": 26,  # Pick From Subinv -> 质量状态
     "AM": 5,   # Serial
     "AN": 4,   # LPN
     "AO": 3,   # Qty

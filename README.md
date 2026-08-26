@@ -11,6 +11,7 @@
 - `GE-ORACLE拣货单` Excel 导出按 `DOC_SALESORDER_HEADER.xlsx` 的销售订单表头模板生成，仅保留模板 Sheet，按模板第 3 行映射写入固定值与识别字段
 - `GE-ORACLE拣货单` Excel 导出时 `Pick Slip Print Date` / `Ordered Date` 支持三字母缩写与完整英文月份名（如 `APR` / `APRIL`）及 2 位/4 位年份转换
 - `GE-ORACLE拣货单` Excel 导出的 `货物来源` 固定写入 `ORACLE`，`参考编号3` 取识别字段 `System Id`，`质量状态` 按 `Pick From Subinv` 后缀规则写入 `GOOD`/`BAD`
+- `GE-ORACLE拣货单` 新增 `SHIP TO NO` 识别字段，预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
 - `GE-OSCAR拣货单` 预览字段顺序按业务确认排列：`服务申请号`、`物料编号`、`数量`、`序列号`、`货位`、`状态`、`仓库` 开头，后续为供应商、SSO、收货信息与跟踪信息
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
@@ -123,6 +124,8 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-08-26：[新增] `GE-ORACLE拣货单` OCR 新增 `SHIP TO NO` 字段；预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
+- 2026-08-26：[修复] 修正 `GE-ORACLE拣货单` 新增 `SHIP TO NO` 后 Excel 导出映射错位的问题；`D` 列恢复为 `Pick Slip Print Date`，受字段插入影响的导出映射统一后移
 - 2026-08-26：[修复] 修复 Windows 构建产物中顶部三个操作按钮高度不一致的问题；「选择文件并开始处理」不再单独指定黑体字号，与其他按钮统一使用 Tk 默认字体基线。
 - 2026-08-24：[修复] 修复「中止」按钮在 Windows/macOS 上处理中文字不可见的问题，改用深色文字并显式设置正常、悬停与禁用状态文字颜色。
 - 2026-08-24：[新增] 在「确认并导出」旁新增「中止」按钮，OCR 处理过程中可本地中止当前批次；已提交服务端 OCR 任务继续执行。
