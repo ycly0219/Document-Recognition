@@ -19,13 +19,19 @@ from excel_export import (
 from feishu_client import get_tenant_access_token, send_to_bitable
 from logging_utils import log_queue, print_log
 from mock_data import generate_mock_data
-from ocr_client import call_get_result_api, call_process_api, upload_file_to_server
+from ocr_client import (
+    OCRAborted,
+    call_get_result_api,
+    call_process_api,
+    upload_file_to_server,
+)
 from parsers import get_core_headers, parse_commit_result
 
 
 ui_message_queue = queue.Queue()
 worker_thread = None
 export_thread = None
+abort_event = threading.Event()
 preview_select_text = ""
 preview_files = []
 active_tree = None
@@ -251,6 +257,8 @@ def run_task():
             return
 
     clear_preview()
+    abort_event.clear()
+    abort_btn.config(state=tk.NORMAL)
     btn.config(text="正在处理...", state=tk.DISABLED)
     mock_check.config(state=tk.DISABLED)
     set_progress_state(50, "处理进度：已开始（50%）")
@@ -267,13 +275,37 @@ def run_task():
     win.after(100, poll_ui_queue)
 
 
+def abort_processing():
+    """请求中止当前 OCR 处理批次。"""
+    abort_event.set()
+    abort_btn.config(state=tk.DISABLED)
+    print_log("收到中止请求，正在停止当前批次")
+    set_progress_state(50, "处理进度：正在中止...", "#D97706")
+
+
+def finish_abort_state():
+    """恢复中止后的初始界面状态。"""
+    abort_btn.config(state=tk.DISABLED)
+    btn.config(text="选择文件并开始处理", state=tk.NORMAL)
+    mock_check.config(state=tk.NORMAL)
+    set_progress_state(0, "处理进度：已中止", "#D97706")
+
+
 def process_batch_worker(files, select_text, current_model_id, mock_mode):
     """后台线程入口，统一捕获批量处理异常。"""
     try:
         if mock_mode:
+            if abort_event.is_set():
+                ui_message_queue.put(("processing_aborted",))
+                return
             process_mock_batch(select_text)
-        else:
-            process_batch(files, select_text, current_model_id)
+        elif not process_batch(files, select_text, current_model_id):
+            print_log("批次已由用户中止，正在恢复界面")
+            ui_message_queue.put(("processing_aborted",))
+            return
+        if abort_event.is_set():
+            print_log("批次已由用户中止，正在恢复界面")
+            ui_message_queue.put(("processing_aborted",))
     except Exception as e:
         print_log(f"处理流程异常: {str(e)}")
         ui_message_queue.put(("processing_error", f"处理流程异常: {str(e)}"))
@@ -296,6 +328,9 @@ def process_batch(files, select_text, current_model_id):
     print_log(f"===== 批量处理，共{total_files}个文件，模版：{select_text} =====")
 
     for done, file_path in enumerate(files, 1):
+        if abort_event.is_set():
+            print_log("已收到中止请求，停止处理新文件")
+            return False
         filename = os.path.basename(file_path)
         status = "失败"
         res_msg = ""
@@ -307,9 +342,15 @@ def process_batch(files, select_text, current_model_id):
 
         try:
             file_id, file_url = upload_file_to_server(file_path)
+            if abort_event.is_set():
+                raise OCRAborted()
             # 传入当前选中的单据规则名称，用于内部判断sysCode
             req_uuid, _ = call_process_api(file_url, filename, file_id, current_model_id, select_text)
-            _, ocr_result_dict = call_get_result_api(req_uuid)
+            if abort_event.is_set():
+                raise OCRAborted()
+            _, ocr_result_dict = call_get_result_api(req_uuid, abort_event)
+            if abort_event.is_set():
+                raise OCRAborted()
 
             if ocr_result_dict and ocr_result_dict.get("status") is True:
                 commit_result = ocr_result_dict.get("data", {}).get("commitResult", {})
@@ -326,6 +367,9 @@ def process_batch(files, select_text, current_model_id):
             else:
                 raise Exception("OCR返回识别状态异常")
 
+        except OCRAborted:
+            print_log("批次已由用户中止")
+            return False
         except Exception as e:
             status = "失败"
             res_msg = str(e)
@@ -343,6 +387,9 @@ def process_batch(files, select_text, current_model_id):
 
     print_log(f"\n===== 批量处理结束 =====")
     print_log(f"总文件：{total_files} | 成功：{success_count} | 失败：{fail_count} | 有效明细行数：{len(core_data)}")
+    if abort_event.is_set():
+        print_log("批次已由用户中止，不进入预览")
+        return False
     threading.Thread(
         target=_send_feishu_statistics,
         args=(select_text, total_files),
@@ -352,6 +399,7 @@ def process_batch(files, select_text, current_model_id):
     ui_message_queue.put(("preview", select_text,
                           get_core_headers(select_text), file_results,
                           success_count, fail_count))
+    return True
 
 
 def process_mock_batch(select_text):
@@ -449,6 +497,7 @@ def show_preview(select_text, headers, file_results,
     on_preview_tab_changed()
     mock_check.config(state=tk.NORMAL)
     btn.config(text="选择文件并开始处理", state=tk.NORMAL)
+    abort_btn.config(state=tk.DISABLED)
     total_rows = sum(len(info["tree"].get_children()) for info in preview_files)
     print_log(f"预览数据就绪：模板 {select_text}，页签数 {len(preview_files)}，"
               f"明细行数 {total_rows}，"
@@ -543,6 +592,7 @@ def clear_preview():
     refresh_export_state()
     set_progress_state(0, "处理进度：待开始")
     btn.config(text="选择文件并开始处理", state=tk.NORMAL)
+    abort_btn.config(state=tk.DISABLED)
     mock_check.config(state=tk.NORMAL)
 
 
@@ -655,15 +705,21 @@ def poll_ui_queue():
         except queue.Empty:
             break
         if kind == "preview":
+            if abort_event.is_set():
+                finish_abort_state()
+                continue
             show_preview(*payload)
         elif kind == "progress":
             update_progress(payload[0], payload[1])
         elif kind == "complete":
             refresh_export_state()
             messagebox.showinfo("完成", payload[0])
+        elif kind == "processing_aborted":
+            finish_abort_state()
         elif kind == "processing_error":
             btn.config(text="选择文件并开始处理", state=tk.NORMAL)
             mock_check.config(state=tk.NORMAL)
+            abort_btn.config(state=tk.DISABLED)
             set_progress_state(100, "处理进度：处理失败", "#D92D20")
             messagebox.showerror("错误", payload[0])
         elif kind == "export_error":
@@ -694,11 +750,19 @@ mock_check = tk.Checkbutton(top, text="模拟数据", variable=mock_var, font=("
 mock_check.pack(side=tk.LEFT, padx=(0, 20))
 
 btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width=22,
-                bg="#4CAF50", fg="#0B3D0F", font=("黑体", 11))
+                bg="#4CAF50", fg="#0B3D0F")
 btn.pack(side=tk.LEFT)
 export_btn = tk.Button(top, text="确认并导出", command=start_export,
                        width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
 export_btn.pack(side=tk.LEFT, padx=(8, 0))
+abort_btn = tk.Button(
+    top, text="中止", command=abort_processing, width=10,
+    bg="#D92D20", fg="#111827",
+    activebackground="#B42318", activeforeground="#111827",
+    disabledforeground="#6B7280",
+    state=tk.DISABLED,
+)
+abort_btn.pack(side=tk.LEFT, padx=(8, 0))
 
 progress_frame = tk.Frame(win)
 progress_frame.pack(fill=tk.X, padx=10, pady=(8, 0))

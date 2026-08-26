@@ -27,6 +27,22 @@ from config import (
 from logging_utils import print_log
 
 
+class OCRAborted(Exception):
+    """OCR 轮询被调用方主动中止。"""
+
+
+def _sleep_or_abort(seconds, cancel_event):
+    """按小间隔等待，收到中止信号时立即放弃。"""
+    if cancel_event is None:
+        time.sleep(seconds)
+        return
+    deadline = time.time() + seconds
+    while not cancel_event.is_set() and time.time() < deadline:
+        time.sleep(min(0.2, max(0.0, deadline - time.time())))
+    if cancel_event.is_set():
+        raise OCRAborted("OCR识别已由用户中止")
+
+
 def get_file_type_and_content_type(file_path):
     """根据扩展名返回上传接口使用的文件类型与 Content-Type。"""
     ext = os.path.splitext(file_path)[1].lower()
@@ -103,13 +119,15 @@ def call_process_api(file_url, filename, file_id, model_id, rule_name):
         raise Exception(f"OCR接口调用失败: {str(e)}")
 
 
-def call_get_result_api(req_uuid):
+def call_get_result_api(req_uuid, cancel_event=None):
     """按 reqUuid 轮询 OCR 识别结果，直到有有效 commitResult。"""
     max_retry = OCR_MAX_RETRY
     retry_interval = OCR_RETRY_INTERVAL
     current_retry = 0
 
     while current_retry < max_retry:
+        if cancel_event is not None and cancel_event.is_set():
+            raise OCRAborted("OCR识别已由用户中止")
         current_retry += 1
         print_log(f"第{current_retry}/{max_retry}次查询OCR结果 reqUuid={req_uuid}")
         try:
@@ -120,7 +138,7 @@ def call_get_result_api(req_uuid):
 
             if not res_dict.get("status"):
                 print_log("接口status=false，等待重试")
-                time.sleep(retry_interval)
+                _sleep_or_abort(retry_interval, cancel_event)
                 continue
 
             commit_result = res_dict.get("data", {}).get("commitResult")
@@ -129,10 +147,12 @@ def call_get_result_api(req_uuid):
                 return "", res_dict
             else:
                 print_log("识别结果未生成，等待3秒")
-                time.sleep(retry_interval)
+                _sleep_or_abort(retry_interval, cancel_event)
 
+        except OCRAborted:
+            raise
         except Exception as e:
             print_log(f"第{current_retry}次查询异常: {str(e)}")
-            time.sleep(retry_interval)
+            _sleep_or_abort(retry_interval, cancel_event)
 
     raise Exception(f"查询{max_retry}次无有效识别结果")
