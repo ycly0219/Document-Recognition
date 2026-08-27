@@ -863,7 +863,7 @@ progress_label = tk.Label(progress_frame, text="处理进度：待开始",
                           font=("黑体", 11, "bold"), anchor="w")
 progress_label.pack(fill=tk.X)
 
-progress_canvas = tk.Canvas(progress_frame, height=28, highlightthickness=0)
+progress_canvas = tk.Canvas(progress_frame, height=14, highlightthickness=0)
 progress_canvas.pack(fill=tk.X, pady=(4, 0))
 progress_canvas.bind("<Configure>", lambda _event: draw_progress_canvas())
 
@@ -907,8 +907,7 @@ del_btn = tk.Button(op_frame, text="删除行", command=active_tree_delete_selec
                     width=10, state=tk.DISABLED)
 del_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-tk.Label(win, text="处理日志", font=("黑体", 10)).pack(anchor="w", padx=12)
-log_text = tk.Text(win, height=8, width=110)
+log_text = tk.Text(win, height=6, width=110)
 log_text.pack(fill=tk.X, padx=10, pady=(2, 10))
 
 if __name__ == "__main__":
