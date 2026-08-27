@@ -62,6 +62,87 @@ def get_core_headers(select_text):
     raise ValueError(f"未知模板: {select_text}")
 
 
+_PREVIEW_LAYOUT = {
+    "GE-ORACLE拣货单": (
+        [
+            "Order Number",
+            "OrderType",
+            "Pick Slip Print Date",
+            "Shipment Priority",
+            "Service Level",
+            "FE SSO",
+            "FE Name",
+            "SHIP TO NO",
+            "Ship To Address",
+            "Email",
+            "Shipping Instruction",
+            "Special Instruction",
+            "Customer Name",
+            "Customer Number",
+            "System Id",
+            "Pick From Subinv",
+            "Customer PO",
+            "Delivery",
+            "Ordered Date",
+            "Ship Method",
+        ],
+        [
+            "Task Id",
+            "Item Number",
+            "Qty",
+            "LPN",
+            "Serial",
+            "Lot",
+            "COO",
+            "Pick From Locator",
+            "Org",
+        ],
+    ),
+    "GE-OSCAR拣货单": (
+        [
+            "服务申请号", "SR编号", "时效", "供应商", "收货人",
+            "收货地址", "收货人电话", "申请说明", "SSO", "姓名", "客户设备id",
+        ],
+        [
+            "物料编号", "数量", "序列号", "货位", "仓库", "状态", "跟踪号",
+        ],
+    ),
+    "GE-发票单": (
+        [
+            "INVOICE NO", "DATE", "DELIVERY", "CARRIER", "HAWB",
+        ],
+        [
+            "ITEM NUMBER", "QTY", "LPN Number", "Serial Number",
+            "LOT Number", "Expiration Date", "COUNTRY OF ORIGIN",
+            "SALES ORDER NO", "CUSTOMER PO",
+        ],
+    ),
+}
+
+
+def get_preview_layout(select_text):
+    """返回预览用的 Header 字段顺序与 Details 字段顺序。"""
+    if select_text not in _PREVIEW_LAYOUT:
+        raise ValueError(f"未知模板: {select_text}")
+    return _PREVIEW_LAYOUT[select_text]
+
+
+def merge_preview_rows(select_text, header_values, detail_rows):
+    """按导出所需的完整列顺序，把单组单据头与明细行重组为完整行。"""
+    full_headers = get_core_headers(select_text)
+    header_fields, detail_fields = get_preview_layout(select_text)
+    header_index = {name: index for index, name in enumerate(full_headers)}
+    detail_index = {name: index for index, name in enumerate(detail_fields)}
+    merged_rows = []
+    for detail_row in detail_rows:
+        row = [header_values.get(name, "") for name in full_headers]
+        for name in detail_fields:
+            index = detail_index[name]
+            row[header_index[name]] = detail_row[index] if index < len(detail_row) else ""
+        merged_rows.append(row)
+    return merged_rows
+
+
 def _parse_oracle_picklist(commit_result, filename):
     """解析 GE-ORACLE 拣货单，返回明细行列表。"""
     order_number = commit_result.get("Order Number", {}).get("value", "").strip()

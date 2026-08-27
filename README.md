@@ -7,15 +7,18 @@
 - 支持三种单据模板：`GE-ORACLE拣货单`、`GE-OSCAR拣货单`、`GE-发票单`
 - `GE-ORACLE拣货单` 原始 `Item Details` 不再导出，改为提取 `LPN`、`Serial`、`Lot`、`COO` 四列；`LPN` 必有值，其余缺失时为空
 - `GE-ORACLE拣货单` 的 `Item Details` 遇到 `UN Number:` 后忽略之后内容，不再继续解析，也不导出 UN Number
-- `GE-ORACLE拣货单` 预览字段顺序按业务确认排列：`Order Number` 开头、`Task Id` 和明细字段在前、`Delivery` 结尾
+- `GE-ORACLE拣货单` 预览拆分为“单据头 + 明细”：Header 按 `Order Number`、`OrderType`、`Pick Slip Print Date`、`Shipment Priority`、`Service Level`、`FE SSO`、`FE Name`、`SHIP TO NO`、`Ship To Address`、`Email`、`Shipping Instruction`、`Special Instruction`、`Customer Name`、`Customer Number`、`System Id`、`Pick From Subinv`、`Customer PO`、`Delivery`、`Ordered Date`、`Ship Method` 顺序；Details 按 `Task Id`、`Item Number`、`Qty`、`LPN`、`Serial`、`Lot`、`COO`、`Pick From Locator`、`Org` 顺序
 - `GE-ORACLE拣货单` Excel 导出按 `DOC_SALESORDER_HEADER.xlsx` 的销售订单表头模板生成，仅保留模板 Sheet，按模板第 3 行映射写入固定值与识别字段
 - `GE-ORACLE拣货单` Excel 导出时 `Pick Slip Print Date` / `Ordered Date` 支持三字母缩写与完整英文月份名（如 `APR` / `APRIL`）及 2 位/4 位年份转换
 - `GE-ORACLE拣货单` Excel 导出的 `货物来源` 固定写入 `ORACLE`，`参考编号3` 取识别字段 `System Id`，`质量状态` 按 `Pick From Subinv` 后缀规则写入 `GOOD`/`BAD`
 - `GE-ORACLE拣货单` 新增 `SHIP TO NO` 识别字段，预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
-- `GE-OSCAR拣货单` 预览字段顺序按业务确认排列：`服务申请号`、`物料编号`、`数量`、`序列号`、`货位`、`状态`、`仓库` 开头，后续为供应商、SSO、收货信息与跟踪信息
+- `GE-OSCAR拣货单` 预览拆分为“单据头 + 明细”：Header 按 `服务申请号`、`SR编号`、`时效`、`供应商`、`收货人`、`收货地址`、`收货人电话`、`申请说明`、`SSO`、`姓名`、`客户设备id` 顺序；Details 按 `物料编号`、`数量`、`序列号`、`货位`、`仓库`、`状态`、`跟踪号` 顺序
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
-- `GE-发票单` 预览字段顺序按业务确认排列：`INVOICE NO` 开头、`HAWB` 结尾
+- `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
+- 预览页签顶部只显示一组单据头，并按多列可编辑表单展示，不再横向平铺；单据头修改同步到所有明细行，新增明细行自动带当前单据头，Excel 导出仍使用原有完整行映射
+- 单据头预览区使用多列 `Label + Entry` 表单，字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
+- 底部操作按钮行保持固定可见；预览页签内容不再参与窗口尺寸计算，表格超高/超宽时通过内部滚动条查看
 - `GE-发票单` Excel 导出按 `DOC_PO_HEADER.xlsx` 的采购订单表头模板生成，固定值与发票字段映射自动写入
 - `GE-发票单` 仅一个 LPN（或仅一个 LPN+Serial）时保留一行并写原始 QTY，不再按 QTY 重复生成多行
 - 预览表格支持在选中行下方插入空白行；支持选中一行或多行后整行复制/粘贴，并可通过按钮或 `Ctrl/Cmd+C / Ctrl/Cmd+V` 操作
@@ -80,7 +83,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 2. 点击“选择文件并开始处理”。
 3. 多选需要处理的图片或 PDF，单次最多 5 个文件；超过 5 个会提示重新选择。
 4. 等待处理完成，界面日志会展示上传、OCR 提交、轮询和解析进度。
-5. 处理完成后，界面按文件显示预览页签，切换页签可查看对应文件名和明细，双击单元格修改内容，或用「新增行 / 插入行 / 删除行」调整明细；选中整行后可用「复制行 / 粘贴行」或 `Ctrl/Cmd+C / Ctrl/Cmd+V` 复制为新行。
+5. 处理完成后，界面按文件显示预览页签，页签顶部展示该文件的一组单据头，下方展示明细；单据头以多列表单展示、可直接编辑，明细单元格可双击修改，或用「新增行 / 插入行 / 删除行」调整明细；选中整行后可用「复制行 / 粘贴行」或 `Ctrl/Cmd+C / Ctrl/Cmd+V` 复制为新行。
 6. 核对无误后点击「确认并导出」，每次会先弹出目录选择框；选择后本批次生成 Excel 写入所选目录，取消选择则不导出。首次或没有历史记录时默认打开 exe 同目录（源码运行时为当前工作目录），后续默认打开上次选择的目录。飞书统计已在解析完成后后台发送，不阻塞导出。
 7. 需要处理新一批文件时，再次点击「选择文件并开始处理」并选择文件；确认选择后会自动清空上一批预览内容，取消选择或文件数超过 5 个时不执行清空。
 
@@ -124,6 +127,10 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-08-27：[修复] 修复部分表格预览内容把窗口请求尺寸撑大、导致底部操作按钮被挤出界面的问题；预览区超高/超宽改为内部滚动条查看
+- 2026-08-27：[变更] 单据头表单的字段标签字号调大一号，预览字段更易辨认
+- 2026-08-27：[变更] 单据头预览改为多列可编辑表单，不再横向平铺；明细表格列宽自适应撑满预览区宽度，Excel 导出映射保持不变
+- 2026-08-27：[变更] 预览拆分为“单据头 + 明细”，三种模板 Header/Details 字段顺序按业务提供顺序展示；单据头可双击修改并同步到所有明细行，新增明细行自动带当前单据头，Excel 导出映射保持不变
 - 2026-08-26：[新增] `GE-ORACLE拣货单` OCR 新增 `SHIP TO NO` 字段；预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
 - 2026-08-26：[修复] 修正 `GE-ORACLE拣货单` 新增 `SHIP TO NO` 后 Excel 导出映射错位的问题；`D` 列恢复为 `Pick Slip Print Date`，受字段插入影响的导出映射统一后移
 - 2026-08-26：[修复] 修复 Windows 构建产物中顶部三个操作按钮高度不一致的问题；「选择文件并开始处理」不再单独指定黑体字号，与其他按钮统一使用 Tk 默认字体基线。

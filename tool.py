@@ -25,7 +25,12 @@ from ocr_client import (
     call_process_api,
     upload_file_to_server,
 )
-from parsers import get_core_headers, parse_commit_result
+from parsers import (
+    get_core_headers,
+    get_preview_layout,
+    merge_preview_rows,
+    parse_commit_result,
+)
 
 
 ui_message_queue = queue.Queue()
@@ -189,7 +194,8 @@ class EditableTreeview(ttk.Treeview):
         for index, row_id in enumerate(self.get_children(), 1):
             self.item(row_id, text=index)
 
-    def auto_size_columns(self, max_width=320, min_width=90, padding=26):
+    def auto_size_columns(self, max_width=320, min_width=90, padding=26,
+                          fill_width=False):
         """按内容自动收缩列宽并居中，长内容由用户拖动列宽查看。"""
         font = tkfont.nametofont("TkDefaultFont")
         heading_font = tkfont.Font(font=PREVIEW_HEADING_FONT)
@@ -199,7 +205,7 @@ class EditableTreeview(ttk.Treeview):
             width = max([heading_font.measure(col)] + content_w) + padding
             width = min(max(min_width, width), max_width)
             self.column(col, width=width, minwidth=min_width,
-                        stretch=False, anchor="center")
+                        stretch=fill_width, anchor="center")
             self.heading(col, anchor="center")
 
     def clear_rows(self):
@@ -430,9 +436,97 @@ def _short_tab_label(filename, max_len=22):
     return name[:max_len - 1] + "…"
 
 
-def _build_file_tab(file_result, headers):
-    """为单个文件创建预览页签，并返回该页签对应的可编辑表格。"""
+def _header_values_from_rows(rows, full_headers, header_fields):
+    """从头组单据行中提取每个 Header 字段的首个非空值。"""
+    values = {field: "" for field in header_fields}
+    for row in rows or []:
+        row_map = dict(zip(full_headers, row))
+        for field in header_fields:
+            if not values[field] and str(row_map.get(field, "")).strip():
+                values[field] = row_map[field]
+    return values
+
+
+def _detail_rows_from_full_rows(rows, full_headers, detail_fields):
+    """从完整数据行中提取预览明细表所需字段。"""
+    detail_rows = []
+    for row in rows or []:
+        row_map = dict(zip(full_headers, row))
+        detail_rows.append([row_map.get(field, "") for field in detail_fields])
+    return detail_rows
+
+
+def _build_scrolled_preview_tree(parent, columns, rows):
+    """创建带滚动条的明细预览表格，并返回其外层容器与 Treeview。"""
+    frame = tk.Frame(parent)
+    tree = EditableTreeview(
+        frame,
+        style="Preview.Treeview",
+        selectmode="extended",
+    )
+    tree.bind("<<TreeviewSelect>>",
+              lambda _event: refresh_row_action_state())
+    tree.tag_configure("new_row", background="#FFF3CD")
+    tree.tag_configure("zebra_even", background="#FFFFFF")
+    tree.tag_configure("zebra_odd", background="#EFF5F9")
+
+    vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+    hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+    tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+    tree.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
+    hsb.grid(row=1, column=0, sticky="ew")
+    frame.rowconfigure(0, weight=1)
+    frame.columnconfigure(0, weight=1)
+
+    tree["columns"] = columns
+    tree.column("#0", width=40, minwidth=30, stretch=False, anchor="center")
+    for column in columns:
+        tree.heading(column, text=column)
+    for row_index, row in enumerate(rows):
+        insert_args = {"values": row}
+        tag = "zebra_even" if row_index % 2 == 0 else "zebra_odd"
+        insert_args["tags"] = (tag,)
+        tree.insert("", tk.END, **insert_args)
+    tree._renumber()
+    tree.auto_size_columns(fill_width=True)
+    return frame, tree
+
+
+def _update_preview_header(file_result, field, value):
+    """保存单据头编辑结果，导出重组时供所有明细行使用。"""
+    if field in file_result.get("header_values", {}):
+        file_result["header_values"][field] = value
+
+
+def _build_header_form(parent, file_result, header_fields, header_values):
+    """把单据头字段渲染为多列表单，编辑时直接同步到导出数据。"""
+    form = tk.Frame(parent)
+    columns = 5 if len(header_fields) >= 5 else max(1, len(header_fields))
+    for index, field in enumerate(header_fields):
+        cell = tk.Frame(form)
+        cell.grid(row=index // columns, column=index % columns,
+                  sticky="nsew", padx=4, pady=2)
+        tk.Label(cell, text=field, anchor="w",
+                 font=("黑体", 11, "bold")).pack(fill=tk.X)
+        value_var = tk.StringVar(master=form, value=header_values.get(field, ""))
+        tk.Entry(cell, textvariable=value_var).pack(fill=tk.X)
+        value_var.trace_add(
+            "write",
+            lambda *_args, field=field, value_var=value_var,
+            file_result=file_result: _update_preview_header(
+                file_result, field, value_var.get()
+            ),
+        )
+    for col_index in range(columns):
+        form.columnconfigure(col_index, weight=1, uniform="header")
+    return form
+
+
+def _build_file_tab(file_result, headers, header_fields, detail_fields):
+    """为单个文件创建“单据头表单 + 明细”预览页签，并返回明细表格。"""
     tab = ttk.Frame(preview_notebook)
+    tab.pack_propagate(False)
     preview_notebook.add(tab, text=_short_tab_label(file_result["filename"]))
 
     status_text = f"状态：{file_result['status']}"
@@ -446,37 +540,31 @@ def _build_file_tab(file_result, headers):
     )
     status_label.pack(fill=tk.X, padx=8, pady=(0, 4))
 
-    tree_frame = tk.Frame(tab)
-    tree_frame.pack(fill=tk.BOTH, expand=True)
-    tree = EditableTreeview(tree_frame, style="Preview.Treeview",
-                            selectmode="extended")
-    tree.bind("<<TreeviewSelect>>",
-              lambda _event: refresh_row_action_state())
-    tree.tag_configure("new_row", background="#FFF3CD")
-    tree.tag_configure("zebra_even", background="#FFFFFF")
-    tree.tag_configure("zebra_odd", background="#EFF5F9")
-    vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-    hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
-    tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-    tree.grid(row=0, column=0, sticky="nsew")
-    vsb.grid(row=0, column=1, sticky="ns")
-    hsb.grid(row=1, column=0, sticky="ew")
-    tree_frame.rowconfigure(0, weight=1)
-    tree_frame.columnconfigure(0, weight=1)
+    header_values = _header_values_from_rows(
+        file_result.get("rows") or [], headers, header_fields
+    )
+    file_result["header_values"] = header_values
 
-    tree["columns"] = headers
-    tree.column("#0", width=40, minwidth=30, stretch=False, anchor="center")
-    for header in headers:
-        tree.heading(header, text=header)
-    for row_index, row in enumerate(file_result.get("rows") or []):
-        tag = "zebra_even" if row_index % 2 == 0 else "zebra_odd"
-        tree.insert("", tk.END, values=row, tags=(tag,))
-    tree._renumber()
-    tree.auto_size_columns()
+    tk.Label(tab, text="单据头", anchor="w",
+             font=("黑体", 12, "bold")).pack(fill=tk.X, padx=8, pady=(0, 2))
+    header_panel = _build_header_form(
+        tab, file_result, header_fields, header_values
+    )
+    header_panel.pack(fill=tk.X, padx=8, pady=(0, 4))
 
-    file_result["tree"] = tree
+    tk.Label(tab, text="明细", anchor="w",
+             font=("黑体", 12, "bold")).pack(fill=tk.X, padx=8, pady=(0, 2))
+    detail_rows = _detail_rows_from_full_rows(
+        file_result.get("rows") or [], headers, detail_fields
+    )
+    detail_panel, detail_tree = _build_scrolled_preview_tree(
+        tab, detail_fields, detail_rows
+    )
+    detail_panel.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 4))
+
+    file_result["tree"] = detail_tree
     file_result["tab"] = tab
-    return tree
+    return detail_tree
 
 
 def show_preview(select_text, headers, file_results,
@@ -489,8 +577,9 @@ def show_preview(select_text, headers, file_results,
         info["tab"].destroy()
     preview_files = list(file_results)
     active_tree = None
+    header_fields, detail_fields = get_preview_layout(select_text)
     for file_result in preview_files:
-        _build_file_tab(file_result, headers)
+        _build_file_tab(file_result, headers, header_fields, detail_fields)
 
     if preview_notebook.tabs():
         preview_notebook.select(0)
@@ -600,9 +689,12 @@ def start_export():
     """选择导出目录后收集有明细的文件页签并启动批量导出线程。"""
     export_targets = []
     for info in preview_files:
-        _, rows = info["tree"].get_data()
-        if rows:
-            export_targets.append((info, rows))
+        _, detail_rows = info["tree"].get_data()
+        if detail_rows:
+            full_rows = merge_preview_rows(
+                preview_select_text, info["header_values"], detail_rows
+            )
+            export_targets.append((info, full_rows))
     if not export_targets:
         messagebox.showwarning("温馨提示", "没有可导出的明细数据")
         return

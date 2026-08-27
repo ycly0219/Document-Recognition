@@ -73,7 +73,11 @@ def generate_mock_data(select_text):
     else:
         raise ValueError(f"未知模板: {select_text}")
 
-    split_index = max(1, len(rows) // 2)
+    split_index = {
+        "GE-ORACLE拣货单": 2,
+        "GE-OSCAR拣货单": 2,
+        "GE-发票单": 5,
+    }[select_text]
     file_results = [
         {
             "filename": "模拟文件-01.png",
