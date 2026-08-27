@@ -10,7 +10,7 @@ from datetime import date
 from openpyxl import Workbook, load_workbook
 
 from logging_utils import print_log
-from parsers import get_core_headers
+from parsers import get_core_headers, get_order_type_value
 
 
 def _resource_path(filename):
@@ -59,7 +59,6 @@ _DATE_PATTERN = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$")
 
 _INVOICE_FIXED_VALUES = {
     "A": "WH004078",
-    "B": "OSI",
     "C": "00",
     "D": "GEHC",
     "R": "WH004078",
@@ -69,24 +68,24 @@ _INVOICE_FIXED_VALUES = {
 }
 
 _INVOICE_DYNAMIC_COLUMNS = {
-    "F": 0,   # INVOICE NO
-    "L": 12,  # CARRIER
-    "M": 13,  # HAWB
-    "T": 1,   # ITEM NUMBER
-    "U": 2,   # QTY
-    "X": 6,   # Expiration Date
-    "Z": 5,   # LOT Number
-    "AD": 4,  # Serial Number
-    "AF": 3,  # LPN Number
-    "AJ": 7,  # COUNTRY OF ORIGIN
-    "AK": 8,  # SALES ORDER NO
-    "AL": 9,  # CUSTOMER PO
+    "B": 0,   # 订单类型 -> OSI/POIN/REPAIRIN
+    "F": 1,   # INVOICE NO
+    "L": 13,  # CARRIER
+    "M": 14,  # HAWB
+    "T": 2,   # ITEM NUMBER
+    "U": 3,   # QTY
+    "X": 7,   # Expiration Date
+    "Z": 6,   # LOT Number
+    "AD": 5,  # Serial Number
+    "AF": 4,  # LPN Number
+    "AJ": 8,  # COUNTRY OF ORIGIN
+    "AK": 9,  # SALES ORDER NO
+    "AL": 10, # CUSTOMER PO
 }
 
 _SALESORDER_FIXED_VALUES = {
     "A": "WH004078",
     "B": "00",
-    "C": "JYCK",
     "E": "Y",
     "F": "GEHC",
     "V": "CONSIGNEEID",
@@ -104,36 +103,36 @@ _SALESORDER_FIXED_VALUES = {
 }
 
 _SALESORDER_DYNAMIC_COLUMNS = {
-    "D": 24,   # Pick Slip Print Date
-    "G": 0,    # Order Number
-    "I": 25,   # System Id -> 参考编号3
-    "L": 9,    # OrderType
-    "M": 10,   # Ordered Date
-    "N": 11,   # Shipment Priority
-    "O": 12,   # Ship Method
-    "P": 13,   # Service Level
-    "Q": 14,   # FE SSO
-    "R": 15,   # FE Name
-    "S": 21,   # Shipping Instruction
-    "T": 22,   # Special Instruction
-    "U": 26,   # Pick From Subinv
-    "W": 19,   # Ship To Address
-    "Y": 18,   # SHIP TO NO -> udf01
-    "AG": 2,   # Item Number
-    "AI": 6,   # Lot
-    "AK": 23,  # Org
-    "AL": 26,  # Pick From Subinv -> 质量状态
-    "AM": 5,   # Serial
-    "AN": 4,   # LPN
-    "AO": 3,   # Qty
-    "AW": 1,   # Task Id
-    "AY": 8,   # Pick From Locator
+    "C": 0,    # 订单类型 -> GNCK_*/GWCK_*
+    "D": 25,   # Pick Slip Print Date
+    "G": 1,    # Order Number
+    "I": 26,   # System Id -> 参考编号3
+    "L": 10,   # OrderType
+    "M": 11,   # Ordered Date
+    "N": 12,   # Shipment Priority
+    "O": 13,   # Ship Method
+    "P": 14,   # Service Level
+    "Q": 15,   # FE SSO
+    "R": 16,   # FE Name
+    "S": 22,   # Shipping Instruction
+    "T": 23,   # Special Instruction
+    "U": 27,   # Pick From Subinv
+    "W": 20,   # Ship To Address
+    "Y": 19,   # SHIP TO NO -> udf01
+    "AG": 3,   # Item Number
+    "AI": 7,   # Lot
+    "AK": 24,  # Org
+    "AL": 27,  # Pick From Subinv -> 质量状态
+    "AM": 6,   # Serial
+    "AN": 5,   # LPN
+    "AO": 4,   # Qty
+    "AW": 2,   # Task Id
+    "AY": 9,   # Pick From Locator
 }
 
 _OSCAR_FIXED_VALUES = {
     "A": "WH004078",
     "B": "00",
-    "C": "JYCK",
     "E": "Y",
     "F": "GEHC",
     "Z": "CONSIGNEEID",
@@ -151,24 +150,25 @@ _OSCAR_FIXED_VALUES = {
 }
 
 _OSCAR_DYNAMIC_COLUMNS = {
-    "G": 0,    # 服务申请号
-    "H": 16,   # SR编号
-    "I": 15,   # 客户设备id
-    "P": 12,   # 时效
-    "Q": 8,    # SSO
-    "V": 7,    # 供应商
-    "W": 9,    # 收货人
-    "X": 10,   # 姓名
-    "Y": 13,   # 收货人电话
-    "AA": 11,  # 收货地址
-    "AB": 14,  # 申请说明
-    "AK": 1,   # 物料编号
-    "AO": 6,   # 仓库
-    "AP": 5,   # 状态: 好件->GOOD
-    "AQ": 3,   # 序列号
-    "AS": 2,   # 数量
-    "BB": 17,  # 跟踪号
-    "BC": 4,   # 货位
+    "C": 0,    # 订单类型 -> GNCK_*/GWCK_*
+    "G": 1,    # 服务申请号
+    "H": 17,   # SR编号
+    "I": 16,   # 客户设备id
+    "P": 13,   # 时效
+    "Q": 9,    # SSO
+    "V": 8,    # 供应商
+    "W": 10,   # 收货人
+    "X": 11,   # 姓名
+    "Y": 14,   # 收货人电话
+    "AA": 12,  # 收货地址
+    "AB": 15,  # 申请说明
+    "AK": 2,   # 物料编号
+    "AO": 7,   # 仓库
+    "AP": 6,   # 状态: 好件->GOOD
+    "AQ": 4,   # 序列号
+    "AS": 3,   # 数量
+    "BB": 18,  # 跟踪号
+    "BC": 5,   # 货位
 }
 
 _ORACLE_MONTH_NAMES = {
@@ -276,7 +276,9 @@ def _export_oracle_salesorder_template(core_data, output_file):
             ws[f"{col_name}{row_index}"] = value
         for col_name, source_index in _SALESORDER_DYNAMIC_COLUMNS.items():
             value = _row_value(preview_row, source_index)
-            if col_name == "D":
+            if col_name == "C":
+                value = get_order_type_value("GE-ORACLE拣货单", value)
+            elif col_name == "D":
                 value = _normalize_oracle_datetime(value, include_time=True)
             elif col_name == "M":
                 value = _normalize_oracle_datetime(value, include_time=False)
@@ -307,7 +309,9 @@ def _export_oscar_salesorder_template(core_data, output_file):
             ws[f"{col_name}{row_index}"] = value
         for col_name, source_index in _OSCAR_DYNAMIC_COLUMNS.items():
             value = _row_value(preview_row, source_index)
-            if col_name == "AP":
+            if col_name == "C":
+                value = get_order_type_value("GE-OSCAR拣货单", value)
+            elif col_name == "AP":
                 value = "GOOD" if str(value).strip() == "好件" else ""
             ws[f"{col_name}{row_index}"] = value
 
@@ -338,6 +342,8 @@ def _export_invoice_po_template(core_data, output_file):
             value = _row_value(preview_row, source_index)
             if col_name == "X":
                 value = _normalize_expiration_date(value)
+            elif col_name == "B":
+                value = get_order_type_value("GE-发票单", value)
             ws[f"{col_name}{row_index}"] = value
 
     wb.save(output_file)

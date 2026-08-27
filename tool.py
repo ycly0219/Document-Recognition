@@ -27,6 +27,8 @@ from ocr_client import (
 )
 from parsers import (
     get_core_headers,
+    get_default_order_type_label,
+    get_order_type_labels,
     get_preview_layout,
     merge_preview_rows,
     parse_commit_result,
@@ -499,7 +501,7 @@ def _update_preview_header(file_result, field, value):
         file_result["header_values"][field] = value
 
 
-def _build_header_form(parent, file_result, header_fields, header_values):
+def _build_header_form(parent, file_result, header_fields, header_values, select_text):
     """把单据头字段渲染为多列表单，编辑时直接同步到导出数据。"""
     form = tk.Frame(parent)
     columns = 5 if len(header_fields) >= 5 else max(1, len(header_fields))
@@ -507,10 +509,21 @@ def _build_header_form(parent, file_result, header_fields, header_values):
         cell = tk.Frame(form)
         cell.grid(row=index // columns, column=index % columns,
                   sticky="nsew", padx=4, pady=2)
+        label_fg = "#B42318" if field == "订单类型" else "#111827"
         tk.Label(cell, text=field, anchor="w",
-                 font=("黑体", 11, "bold")).pack(fill=tk.X)
+                 font=("黑体", 11, "bold"), fg=label_fg).pack(fill=tk.X)
         value_var = tk.StringVar(master=form, value=header_values.get(field, ""))
-        tk.Entry(cell, textvariable=value_var).pack(fill=tk.X)
+        if field == "订单类型":
+            order_type_labels = get_order_type_labels(select_text)
+            default_label = get_default_order_type_label(select_text)
+            if default_label and value_var.get() not in order_type_labels:
+                value_var.set(default_label)
+            ttk.Combobox(
+                cell, textvariable=value_var, state="readonly",
+                values=order_type_labels,
+            ).pack(fill=tk.X)
+        else:
+            tk.Entry(cell, textvariable=value_var).pack(fill=tk.X)
         value_var.trace_add(
             "write",
             lambda *_args, field=field, value_var=value_var,
@@ -523,7 +536,7 @@ def _build_header_form(parent, file_result, header_fields, header_values):
     return form
 
 
-def _build_file_tab(file_result, headers, header_fields, detail_fields):
+def _build_file_tab(file_result, headers, header_fields, detail_fields, select_text):
     """为单个文件创建“单据头表单 + 明细”预览页签，并返回明细表格。"""
     tab = ttk.Frame(preview_notebook)
     tab.pack_propagate(False)
@@ -543,12 +556,16 @@ def _build_file_tab(file_result, headers, header_fields, detail_fields):
     header_values = _header_values_from_rows(
         file_result.get("rows") or [], headers, header_fields
     )
+    if not header_values.get("订单类型"):
+        default_label = get_default_order_type_label(select_text)
+        if default_label:
+            header_values["订单类型"] = default_label
     file_result["header_values"] = header_values
 
     tk.Label(tab, text="单据头", anchor="w",
              font=("黑体", 12, "bold")).pack(fill=tk.X, padx=8, pady=(0, 2))
     header_panel = _build_header_form(
-        tab, file_result, header_fields, header_values
+        tab, file_result, header_fields, header_values, select_text
     )
     header_panel.pack(fill=tk.X, padx=8, pady=(0, 4))
 
@@ -579,7 +596,9 @@ def show_preview(select_text, headers, file_results,
     active_tree = None
     header_fields, detail_fields = get_preview_layout(select_text)
     for file_result in preview_files:
-        _build_file_tab(file_result, headers, header_fields, detail_fields)
+        _build_file_tab(
+            file_result, headers, header_fields, detail_fields, select_text
+        )
 
     if preview_notebook.tabs():
         preview_notebook.select(0)
@@ -687,6 +706,20 @@ def clear_preview():
 
 def start_export():
     """选择导出目录后收集有明细的文件页签并启动批量导出线程。"""
+    missing_files = []
+    for info in preview_files:
+        _, detail_rows = info["tree"].get_data()
+        if detail_rows and not str(
+            info.get("header_values", {}).get("订单类型", "")
+        ).strip():
+            missing_files.append(info["filename"])
+    if missing_files:
+        messagebox.showwarning(
+            "温馨提示",
+            "以下文件请先选择订单类型：\n" + "\n".join(missing_files),
+        )
+        return
+
     export_targets = []
     for info in preview_files:
         _, detail_rows = info["tree"].get_data()
@@ -845,7 +878,7 @@ btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width
                 bg="#4CAF50", fg="#0B3D0F")
 btn.pack(side=tk.LEFT)
 export_btn = tk.Button(top, text="确认并导出", command=start_export,
-                       width=14, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
+                       width=16, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
 export_btn.pack(side=tk.LEFT, padx=(8, 0))
 abort_btn = tk.Button(
     top, text="中止", command=abort_processing, width=10,

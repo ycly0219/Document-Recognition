@@ -5,17 +5,22 @@
 ## 当前功能
 
 - 支持三种单据模板：`GE-ORACLE拣货单`、`GE-OSCAR拣货单`、`GE-发票单`
+- 三种单据的单据头均提供必填 `订单类型` 下拉框，标题红色加粗；`GE-ORACLE拣货单` 与 `GE-OSCAR拣货单` 默认空并可选 9 项，`GE-发票单` 沿用现有 3 项且默认 `国外入库`
+- 点击「确认并导出」前会校验所有有明细文件的 `订单类型`：缺失时提示具体文件名并停止，不再继续弹出导出目录
 - `GE-ORACLE拣货单` 原始 `Item Details` 不再导出，改为提取 `LPN`、`Serial`、`Lot`、`COO` 四列；`LPN` 必有值，其余缺失时为空
 - `GE-ORACLE拣货单` 的 `Item Details` 遇到 `UN Number:` 后忽略之后内容，不再继续解析，也不导出 UN Number
-- `GE-ORACLE拣货单` 预览拆分为“单据头 + 明细”：Header 按 `Order Number`、`OrderType`、`Pick Slip Print Date`、`Shipment Priority`、`Service Level`、`FE SSO`、`FE Name`、`SHIP TO NO`、`Ship To Address`、`Email`、`Shipping Instruction`、`Special Instruction`、`Customer Name`、`Customer Number`、`System Id`、`Pick From Subinv`、`Customer PO`、`Delivery`、`Ordered Date`、`Ship Method` 顺序；Details 按 `Task Id`、`Item Number`、`Qty`、`LPN`、`Serial`、`Lot`、`COO`、`Pick From Locator`、`Org` 顺序
+- `GE-ORACLE拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`Order Number`、`OrderType`、`Pick Slip Print Date`、`Shipment Priority`、`Service Level`、`FE SSO`、`FE Name`、`SHIP TO NO`、`Ship To Address`、`Shipping Instruction`、`Special Instruction`、`Customer Name`、`Customer Number`、`System Id`、`Pick From Subinv`、`Customer PO`、`Delivery`、`Ordered Date`、`Ship Method` 顺序；Details 按 `Task Id`、`Item Number`、`Qty`、`LPN`、`Serial`、`Lot`、`COO`、`Pick From Locator`、`Org` 顺序
+- `GE-ORACLE拣货单` Excel `C` 列改为写所选 `订单类型` 对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`；原 OCR `OrderType` 字段保留并继续写 Excel `L` 列
 - `GE-ORACLE拣货单` Excel 导出按 `DOC_SALESORDER_HEADER.xlsx` 的销售订单表头模板生成，仅保留模板 Sheet，按模板第 3 行映射写入固定值与识别字段
 - `GE-ORACLE拣货单` Excel 导出时 `Pick Slip Print Date` / `Ordered Date` 支持三字母缩写与完整英文月份名（如 `APR` / `APRIL`）及 2 位/4 位年份转换
 - `GE-ORACLE拣货单` Excel 导出的 `货物来源` 固定写入 `ORACLE`，`参考编号3` 取识别字段 `System Id`，`质量状态` 按 `Pick From Subinv` 后缀规则写入 `GOOD`/`BAD`
 - `GE-ORACLE拣货单` 新增 `SHIP TO NO` 识别字段，预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
-- `GE-OSCAR拣货单` 预览拆分为“单据头 + 明细”：Header 按 `服务申请号`、`SR编号`、`时效`、`供应商`、`收货人`、`收货地址`、`收货人电话`、`申请说明`、`SSO`、`姓名`、`客户设备id` 顺序；Details 按 `物料编号`、`数量`、`序列号`、`货位`、`仓库`、`状态`、`跟踪号` 顺序
+- `GE-OSCAR拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`服务申请号`、`SR编号`、`时效`、`供应商`、`收货人`、`收货地址`、`收货人电话`、`申请说明`、`SSO`、`姓名`、`客户设备id` 顺序；Details 按 `物料编号`、`数量`、`序列号`、`货位`、`仓库`、`状态`、`跟踪号` 顺序
+- `GE-OSCAR拣货单` Excel `C` 列与 `GE-ORACLE拣货单` 一致，写所选订单类型对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
-- `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
+- `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
+- `GE-发票单` 单据头新增 `订单类型` 下拉框，默认“国外入库”，可选“国内采购入库”“国内外维修入库”，标题红色加粗且必填；Excel `B` 列按选择写入 `OSI`、`POIN` 或 `REPAIRIN`，不再固定为 `OSI`
 - 预览页签顶部只显示一组单据头，并按多列可编辑表单展示，不再横向平铺；单据头修改同步到所有明细行，新增明细行自动带当前单据头，Excel 导出仍使用原有完整行映射
 - 单据头预览区使用多列 `Label + Entry` 表单，字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
 - 底部操作按钮行保持固定可见；预览页签内容不再参与窗口尺寸计算，表格超高/超宽时通过内部滚动条查看
@@ -111,6 +116,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 - OCR App 凭据、组织号、模板对应的 `modelId`
 - OCR 轮询次数 `OCR_MAX_RETRY`、轮询间隔 `OCR_RETRY_INTERVAL`
 - 飞书 App 凭据、多维表格记录写入地址
+- 三种单据的 `订单类型` 选项、默认值和导出代码集中在 `parsers.py` 顶部常量中；后续扩展只需在对应模板的选项常量中新增一项
 
 当前项目仅内部使用，采用硬编码方式管理以上配置。所有地址、密钥、模型 ID、字段名和解析规则都写在代码中，不迁移至外部环境变量或者配置文件中。
 
@@ -128,6 +134,10 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-08-27：[新增] `GE-ORACLE拣货单`、`GE-OSCAR拣货单` 单据头第一位新增必填 `订单类型` 下拉框，默认空，共 9 个选项；`GE-发票单` 订单类型同步为红色加粗必填样式
+- 2026-08-27：[变更] 两个拣货单导出 Excel 的 `C` 列由固定 `JYCK` 改为所选订单类型代码 `GNCK_*`/`GWCK_*`；ORACLE 原 `OrderType`/Excel `L` 列保留，发票 `B` 列继续映射 `OSI`/`POIN`/`REPAIRIN`
+- 2026-08-27：[变更] `GE-ORACLE拣货单` 预览单据头移除 `Email` 字段；Excel 导出映射保持不变
+- 2026-08-27：[新增] `GE-发票单` 单据头新增 `订单类型` 下拉框，默认“国外入库”；Excel `B` 列按订单类型映射写入 `OSI`/`POIN`/`REPAIRIN`，不再固定写入 `OSI`
 - 2026-08-27：[样式] 顶部进度条高度减半，底部日志区固定为 6 行并移除「处理日志」标题，释放空间给预览明细表格
 - 2026-08-27：[修复] 修复部分表格预览内容把窗口请求尺寸撑大、导致底部操作按钮被挤出界面的问题；预览区超高/超宽改为内部滚动条查看
 - 2026-08-27：[变更] 单据头表单的字段标签字号调大一号，预览字段更易辨认

@@ -5,6 +5,54 @@ import re
 from logging_utils import print_log
 
 
+# 订单类型选项集中维护，后续扩展只需增加对应模板的选项。
+PICK_ORDER_TYPE_OPTIONS = (
+    ("国内出库_FE", "GNCK_FE"),
+    ("国内出库维修订单", "GNCK_WX"),
+    ("国内出库报废订单", "GNCK_BF"),
+    ("国内出库补货订单", "GNCK_BH"),
+    ("国内出库大保养订单", "GNCK_DBY"),
+    ("国外出库400", "GWCK_400"),
+    ("国外出库600", "GWCK_600"),
+    ("国外出库700", "GWCK_700"),
+    ("国外出库900", "GWCK_900"),
+)
+
+INVOICE_ORDER_TYPE_OPTIONS = (
+    ("国外入库", "OSI"),
+    ("国内采购入库", "POIN"),
+    ("国内外维修入库", "REPAIRIN"),
+)
+
+ORDER_TYPE_OPTIONS_BY_TEMPLATE = {
+    "GE-ORACLE拣货单": PICK_ORDER_TYPE_OPTIONS,
+    "GE-OSCAR拣货单": PICK_ORDER_TYPE_OPTIONS,
+    "GE-发票单": INVOICE_ORDER_TYPE_OPTIONS,
+}
+
+DEFAULT_ORDER_TYPE_BY_TEMPLATE = {
+    "GE-ORACLE拣货单": "",
+    "GE-OSCAR拣货单": "",
+    "GE-发票单": INVOICE_ORDER_TYPE_OPTIONS[0][0],
+}
+
+
+def get_order_type_labels(select_text):
+    """返回指定模板可选订单类型中文标签。"""
+    return [label for label, _ in ORDER_TYPE_OPTIONS_BY_TEMPLATE.get(select_text, ())]
+
+
+def get_order_type_value(select_text, label):
+    """把订单类型中文标签转换为当前模板导出值，未知值原样返回。"""
+    mapping = dict(ORDER_TYPE_OPTIONS_BY_TEMPLATE.get(select_text, ()))
+    return mapping.get(str(label).strip(), label)
+
+
+def get_default_order_type_label(select_text):
+    """返回指定模板初始订单类型；拣货单为空，需要人工必选。"""
+    return DEFAULT_ORDER_TYPE_BY_TEMPLATE.get(select_text, "")
+
+
 _ITEM_DETAIL_PATTERN = re.compile(
     r"(?<![A-Za-z])(LPN|Serial|Lot|COO):\s*(.*?)(?=\s*(?:LPN|Serial|Lot|COO):|\Z)",
     re.DOTALL,
@@ -15,6 +63,7 @@ def get_core_headers(select_text):
     """返回各单据模板对应的预览/导出列结构。"""
     if select_text == "GE-ORACLE拣货单":
         return [
+            "订单类型",
             "Order Number",
             "Task Id",
             "Item Number",
@@ -47,6 +96,7 @@ def get_core_headers(select_text):
         ]
     elif select_text == "GE-OSCAR拣货单":
         return [
+            "订单类型",
             "服务申请号", "物料编号", "数量", "序列号", "货位",
             "状态", "仓库", "供应商", "SSO", "收货人",
             "姓名", "收货地址", "时效", "收货人电话", "申请说明",
@@ -55,6 +105,7 @@ def get_core_headers(select_text):
     elif select_text == "GE-发票单":
         # 列头顺序同时用于预览表格与 Excel 导出
         return [
+            "订单类型",
             "INVOICE NO", "ITEM NUMBER", "QTY", "LPN Number", "Serial Number",
             "LOT Number", "Expiration Date", "COUNTRY OF ORIGIN",
             "SALES ORDER NO", "CUSTOMER PO", "DATE", "DELIVERY", "CARRIER", "HAWB"
@@ -65,6 +116,7 @@ def get_core_headers(select_text):
 _PREVIEW_LAYOUT = {
     "GE-ORACLE拣货单": (
         [
+            "订单类型",
             "Order Number",
             "OrderType",
             "Pick Slip Print Date",
@@ -74,7 +126,6 @@ _PREVIEW_LAYOUT = {
             "FE Name",
             "SHIP TO NO",
             "Ship To Address",
-            "Email",
             "Shipping Instruction",
             "Special Instruction",
             "Customer Name",
@@ -100,6 +151,7 @@ _PREVIEW_LAYOUT = {
     ),
     "GE-OSCAR拣货单": (
         [
+            "订单类型",
             "服务申请号", "SR编号", "时效", "供应商", "收货人",
             "收货地址", "收货人电话", "申请说明", "SSO", "姓名", "客户设备id",
         ],
@@ -109,7 +161,7 @@ _PREVIEW_LAYOUT = {
     ),
     "GE-发票单": (
         [
-            "INVOICE NO", "DATE", "DELIVERY", "CARRIER", "HAWB",
+            "订单类型", "INVOICE NO", "DATE", "DELIVERY", "CARRIER", "HAWB",
         ],
         [
             "ITEM NUMBER", "QTY", "LPN Number", "Serial Number",
@@ -191,6 +243,7 @@ def _parse_oracle_picklist(commit_result, filename):
 
         # 按 get_core_headers 的预览列顺序拼接字段
         rows.append([
+            "",
             order_number,
             task_id,
             item_no,
@@ -257,6 +310,7 @@ def _parse_oscar_picklist(commit_result, filename):
         warehouse = item.get("仓库", {}).get("value", "").strip()
 
         rows.append([
+            "",
             service_apply_no, mat_no, qty, serial_no, locator, status_val,
             warehouse, supplier, sso, consignee_name, real_name, ship_addr,
             lead_time, consignee_tel, apply_note, cust_device_id, sr_no,
@@ -267,6 +321,7 @@ def _parse_oscar_picklist(commit_result, filename):
 
 def _parse_invoice(commit_result, filename):
     """解析 GE-发票单，并按 LPN/Serial 与数量关系拆分明细。"""
+    order_type = get_default_order_type_label("GE-发票单")
     invoice_no = commit_result.get("INVOICE NO", {}).get("value", "").strip()
     delivery = commit_result.get("DELIVERY", {}).get("value", "").strip()
     doc_date = commit_result.get("DATE", {}).get("value", "").strip()
@@ -312,7 +367,7 @@ def _parse_invoice(commit_result, filename):
                 print_log(f"Serial为空，匹配LPN规则1：LPN数量={lpn_count}=QTY{qty_val}，逐个拆分")
                 for single_lpn in lpn_list:
                     rows.append([
-                        invoice_no, item_num, "1", single_lpn, "", lot, expire,
+                        order_type, invoice_no, item_num, "1", single_lpn, "", lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -320,14 +375,14 @@ def _parse_invoice(commit_result, filename):
                 single_lpn = lpn_list[0]
                 print_log(f"Serial为空，匹配LPN规则2：单LPN，QTY={qty_val}，保留一行")
                 rows.append([
-                    invoice_no, item_num, raw_qty_str, single_lpn, "", lot, expire,
+                    order_type, invoice_no, item_num, raw_qty_str, single_lpn, "", lot, expire,
                     country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
             else:
                 # LPN不满足拆分，原样一行
                 rows.append([
-                    invoice_no, item_num, raw_qty_str, raw_lpn_str, "", lot, expire,
+                    order_type, invoice_no, item_num, raw_qty_str, raw_lpn_str, "", lot, expire,
                     country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
@@ -340,7 +395,7 @@ def _parse_invoice(commit_result, filename):
                     single_lpn = lpn_list[idx]
                     single_serial = serial_list[idx]
                     rows.append([
-                        invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
+                        order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -350,7 +405,7 @@ def _parse_invoice(commit_result, filename):
                 single_serial = serial_list[0]
                 print_log(f"匹配规则2：单LPN+单Serial，QTY={qty_val}，保留一行")
                 rows.append([
-                    invoice_no, item_num, raw_qty_str, single_lpn, single_serial, lot, expire,
+                    order_type, invoice_no, item_num, raw_qty_str, single_lpn, single_serial, lot, expire,
                     country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
@@ -360,7 +415,7 @@ def _parse_invoice(commit_result, filename):
                 print_log(f"匹配规则3：单LPN，Serial数量={serial_count}=QTY{qty_val}，拆分Serial多行")
                 for single_serial in serial_list:
                     rows.append([
-                        invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
+                        order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -370,14 +425,14 @@ def _parse_invoice(commit_result, filename):
                 print_log(f"匹配规则4：单Serial，LPN数量={lpn_count}=QTY{qty_val}，拆分LPN多行")
                 for single_lpn in lpn_list:
                     rows.append([
-                        invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
+                        order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
             # 其他所有不匹配场景，保留原始一行，LPN/Serial逗号拼接不拆分
             else:
                 rows.append([
-                    invoice_no, item_num, raw_qty_str, raw_lpn_str, raw_serial_str,
+                    order_type, invoice_no, item_num, raw_qty_str, raw_lpn_str, raw_serial_str,
                     lot, expire, country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
