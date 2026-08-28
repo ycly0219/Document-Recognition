@@ -47,6 +47,9 @@ active_tree = None
 continue_query_active = False
 progress_percent = 0
 progress_color = "#16A34A"
+session_log_lines = []
+log_window = None
+log_window_text = None
 
 if sys.platform == "win32":
     PREVIEW_HEADING_FONT = ("Microsoft YaHei UI", 10, "bold")
@@ -224,16 +227,104 @@ class EditableTreeview(ttk.Treeview):
         return headers, rows
 
 
+def _append_line_to_log_window(line):
+    """把一行日志追加到已打开的日志窗口，避免跨线程操作 Tkinter。"""
+    if log_window is None or log_window_text is None:
+        return
+    try:
+        if not log_window.winfo_exists():
+            return
+        log_window_text.config(state=tk.NORMAL)
+        log_window_text.insert(tk.END, line + "\n")
+        log_window_text.see(tk.END)
+        log_window_text.config(state=tk.DISABLED)
+    except tk.TclError:
+        pass
+
+
+def _refresh_log_window():
+    """刷新日志窗口内容，用于打开时载入本次会话已有日志。"""
+    if log_window is None or log_window_text is None:
+        return
+    try:
+        if not log_window.winfo_exists():
+            return
+        log_window_text.config(state=tk.NORMAL)
+        log_window_text.delete("1.0", tk.END)
+        for line in session_log_lines:
+            log_window_text.insert(tk.END, line + "\n")
+        log_window_text.see(tk.END)
+        log_window_text.config(state=tk.DISABLED)
+    except tk.TclError:
+        pass
+
+
 def flush_log():
-    """由主线程把日志队列写入文本框，避免跨线程操作 Tkinter。"""
+    """由主线程把日志队列写入会话缓冲与打开的日志窗口。"""
     while True:
         try:
             line = log_queue.get_nowait()
         except queue.Empty:
             break
-        log_text.insert(tk.END, line + "\n")
-    log_text.see(tk.END)
-    log_text.update_idletasks()
+        session_log_lines.append(line)
+        _append_line_to_log_window(line)
+    if log_window is not None and log_window_text is not None:
+        try:
+            log_window_text.update_idletasks()
+        except tk.TclError:
+            pass
+
+
+def open_log_window():
+    """打开或聚焦本次会话的日志窗口。"""
+    global log_window, log_window_text
+    flush_log()
+    if log_window is not None:
+        try:
+            if log_window.winfo_exists():
+                log_window.deiconify()
+                log_window.lift()
+                log_window.focus_force()
+                return
+        except tk.TclError:
+            log_window = None
+            log_window_text = None
+
+    log_window = tk.Toplevel(win)
+    log_window.title("处理日志")
+    log_window.geometry("900x500")
+    log_window.minsize(400, 200)
+
+    body = tk.Frame(log_window)
+    body.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+    log_window_text = tk.Text(body, state=tk.DISABLED, wrap=tk.WORD)
+    log_scrollbar = ttk.Scrollbar(
+        body, orient="vertical", command=log_window_text.yview
+    )
+    log_window_text.configure(yscrollcommand=log_scrollbar.set)
+    log_window_text.grid(row=0, column=0, sticky="nsew")
+    log_scrollbar.grid(row=0, column=1, sticky="ns")
+
+    body.rowconfigure(0, weight=1)
+    body.columnconfigure(0, weight=1)
+    log_window.protocol("WM_DELETE_WINDOW", close_log_window)
+    _refresh_log_window()
+
+
+def close_log_window():
+    """关闭日志窗口并允许重新打开。"""
+    global log_window, log_window_text
+    if log_window is not None:
+        log_window.destroy()
+    log_window = None
+    log_window_text = None
+
+
+def poll_log_queue():
+    """周期刷新日志队列，保证日志窗口随时显示最新内容。"""
+    flush_log()
+    win.after(200, poll_log_queue)
 
 
 # ---------------- 主流程函数 ----------------
@@ -1179,8 +1270,14 @@ continue_btn = tk.Button(
 )
 continue_btn.pack(side=tk.LEFT, padx=(10, 0))
 
-log_text = tk.Text(win, height=6, width=110)
-log_text.pack(fill=tk.X, padx=10, pady=(2, 10))
+query_log_btn = tk.Button(
+    op_frame, text="查询日志", command=open_log_window,
+    width=10, font=BUTTON_FONT,
+    disabledforeground=DISABLED_FOREGROUND,
+)
+query_log_btn.pack(side=tk.LEFT, padx=(8, 0))
+
+win.after(200, poll_log_queue)
 
 if __name__ == "__main__":
     win.mainloop()

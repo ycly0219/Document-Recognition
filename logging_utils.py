@@ -1,6 +1,6 @@
 """统一日志与 GUI 日志队列。
 
-日志同时写入标准 logging，并通过队列由主线程刷新到 Tkinter 文本框。
+日志同时写入标准 logging，并通过队列由主线程刷新到 Tkinter 日志窗口。
 """
 
 import logging
