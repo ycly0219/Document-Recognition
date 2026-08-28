@@ -21,6 +21,7 @@
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
 - `GE-发票单` 单据头新增 `订单类型` 下拉框，默认“国外入库”，可选“国内采购入库”“国内外维修入库”，标题红色加粗且必填；Excel `B` 列按选择写入 `OSI`、`POIN` 或 `REPAIRIN`，不再固定为 `OSI`
+- `GE-发票单` Excel 导出时仅订单类型为“国外入库”（`OSI`）的 `AA` 列固定写 `ORACLE`，`POIN`/`REPAIRIN` 留空
 - 预览页签顶部只显示一组单据头，并按多列可编辑表单展示，不再横向平铺；单据头修改同步到所有明细行，新增明细行自动带当前单据头，Excel 导出仍使用原有完整行映射
 - 单据头预览区使用多列 `Label + Entry` 表单，字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
 - 底部操作按钮行保持固定可见；预览页签内容不再参与窗口尺寸计算，表格超高/超宽时通过内部滚动条查看
@@ -139,6 +140,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-08-28：[变更] `GE-发票单` 导出 `AA` 列仅在订单类型为“国外入库”（`OSI`）时固定写 `ORACLE`，其他发票订单类型留空
 - 2026-08-28：[变更] OCR 结果轮询间隔由 3 秒调整为 5 秒；单文件最长等待仍为 5 分钟（`OCR_MAX_POLL_SECONDS=300` 不变）
 - 2026-08-28：[修复] 修复「继续查询原任务」期间点击「中止」无效的问题；续查可中止并保留「结果未生成」页签及 `reqUuid`，可再次继续查询
 - 2026-08-28：[修复] Windows 下「确认并导出」「中止」初始禁用时文字对比度不足的问题；全部按钮文字加粗，禁用态统一使用深色文字

@@ -32,7 +32,7 @@
 - **销售订单表头模板（Sales Order Header Template）**：`GE-ORACLE拣货单` 和 `GE-OSCAR拣货单` 导出时复用的 Excel 结构，用于生成销售订单表头文件。
 - **固定值（Fixed Value）**：模板导出时按模板写入的常量业务值，例如仓库编号、货主、单位、质量状态；三种单据的订单类型均由单据头下拉选择，不再作为固定值写入。
 - **订单类型（PO Type）**：三种单据共用的单据头必填字段。`GE-ORACLE拣货单` 与 `GE-OSCAR拣货单` 默认空，按“国内出库_FE”等 9 项中文选择，导出为 `GNCK_*` / `GWCK_*`；`GE-发票单` 默认“国外入库”，另支持“国内采购入库”“国内外维修入库”，导出为 `OSI` / `POIN` / `REPAIRIN`。
-- **货物来源（Goods Source）**：GE-ORACLE 拣货单明细行上的来源标识；当前业务口径固定为 `ORACLE`。
+- **货物来源（Goods Source）**：GE-ORACLE 拣货单明细行上的来源标识；`GE-发票单` 在订单类型为“国外入库”时同样固定为 `ORACLE`。
 - **参考编号3（Reference #3）**：销售订单模板中的第三个参考编号；GE-ORACLE 拣货单场景对应接口的系统编号。
 - **质量状态（Quality Status）**：GE-ORACLE 拣货单物料的质量分类；按仓库子库后缀识别为 `GOOD` 或 `BAD`。
 - **好件（Good Unit）**：GE-OSCAR 拣货单中可正常发货的物料状态；导出质量状态时写入 `GOOD`，非好件状态导出为空。

@@ -345,6 +345,8 @@ def _export_invoice_po_template(core_data, output_file):
             elif col_name == "B":
                 value = get_order_type_value("GE-发票单", value)
             ws[f"{col_name}{row_index}"] = value
+        if ws[f"B{row_index}"].value == "OSI":
+            ws[f"AA{row_index}"] = "ORACLE"
 
     wb.save(output_file)
 
