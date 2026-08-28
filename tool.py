@@ -21,6 +21,7 @@ from logging_utils import log_queue, print_log
 from mock_data import generate_mock_data
 from ocr_client import (
     OCRAborted,
+    OCRResultTimeout,
     call_get_result_api,
     call_process_api,
     upload_file_to_server,
@@ -38,10 +39,12 @@ from parsers import (
 ui_message_queue = queue.Queue()
 worker_thread = None
 export_thread = None
+continue_thread = None
 abort_event = threading.Event()
 preview_select_text = ""
 preview_files = []
 active_tree = None
+continue_query_active = False
 progress_percent = 0
 progress_color = "#16A34A"
 
@@ -236,6 +239,12 @@ def flush_log():
 # ---------------- 主流程函数 ----------------
 def run_task():
     """根据当前模板启动真实或模拟批量处理。"""
+    if continue_query_active:
+        messagebox.showwarning(
+            "温馨提示",
+            "正在继续查询原任务，请等待完成后再次选择文件"
+        )
+        return
     select_text = combo_model.get().strip()
     if not select_text or select_text not in MODEL_MAP:
         messagebox.showwarning("温馨提示", "请先选择单据规则！")
@@ -284,10 +293,13 @@ def run_task():
 
 
 def abort_processing():
-    """请求中止当前 OCR 处理批次。"""
+    """请求中止当前 OCR 处理批次或继续查询。"""
     abort_event.set()
     abort_btn.config(state=tk.DISABLED)
-    print_log("收到中止请求，正在停止当前批次")
+    if continue_query_active:
+        print_log("收到中止请求，正在停止继续查询")
+    else:
+        print_log("收到中止请求，正在停止当前批次")
     set_progress_state(50, "处理进度：正在中止...", "#D97706")
 
 
@@ -333,6 +345,7 @@ def process_batch(files, select_text, current_model_id):
     core_data = []
     success_count = 0
     fail_count = 0
+    pending_count = 0
     print_log(f"===== 批量处理，共{total_files}个文件，模版：{select_text} =====")
 
     for done, file_path in enumerate(files, 1):
@@ -375,6 +388,11 @@ def process_batch(files, select_text, current_model_id):
             else:
                 raise Exception("OCR返回识别状态异常")
 
+        except OCRResultTimeout:
+            status = "结果未生成"
+            res_msg = "识别5分钟未生成结果，可稍后点击“继续查询原任务”"
+            pending_count += 1
+            print_log(f"⏳ [{filename}] 5分钟内未生成识别结果，等待后续继续查询")
         except OCRAborted:
             print_log("批次已由用户中止")
             return False
@@ -389,12 +407,14 @@ def process_batch(files, select_text, current_model_id):
             "status": status,
             "message": res_msg,
             "rows": parsed_rows,
+            "req_uuid": req_uuid,
             "log_row": [filename, file_id, file_url, req_uuid, "", status, res_msg, ""],
         })
         ui_message_queue.put(("progress", done, total_files))
 
     print_log(f"\n===== 批量处理结束 =====")
-    print_log(f"总文件：{total_files} | 成功：{success_count} | 失败：{fail_count} | 有效明细行数：{len(core_data)}")
+    print_log(f"总文件：{total_files} | 成功：{success_count} | 失败：{fail_count} | "
+              f"结果未生成：{pending_count} | 有效明细行数：{len(core_data)}")
     if abort_event.is_set():
         print_log("批次已由用户中止，不进入预览")
         return False
@@ -536,11 +556,13 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
     return form
 
 
-def _build_file_tab(file_result, headers, header_fields, detail_fields, select_text):
+def _build_file_tab(file_result, headers, header_fields, detail_fields,
+                    select_text, add_tab=True):
     """为单个文件创建“单据头表单 + 明细”预览页签，并返回明细表格。"""
     tab = ttk.Frame(preview_notebook)
     tab.pack_propagate(False)
-    preview_notebook.add(tab, text=_short_tab_label(file_result["filename"]))
+    if add_tab:
+        preview_notebook.add(tab, text=_short_tab_label(file_result["filename"]))
 
     status_text = f"状态：{file_result['status']}"
     if not file_result.get("rows"):
@@ -549,17 +571,23 @@ def _build_file_tab(file_result, headers, header_fields, detail_fields, select_t
         status_text += f"；{file_result['message']}"
     status_label = tk.Label(
         tab, text=status_text, anchor="w",
-        fg="#B42318" if file_result["status"] == "失败" else "#111827"
+        fg=("#D97706" if file_result["status"] == "结果未生成"
+            else "#B42318" if file_result["status"] == "失败" else "#111827")
     )
     status_label.pack(fill=tk.X, padx=8, pady=(0, 4))
 
+    file_result["status_label"] = status_label
     header_values = _header_values_from_rows(
         file_result.get("rows") or [], headers, header_fields
     )
     if not header_values.get("订单类型"):
-        default_label = get_default_order_type_label(select_text)
-        if default_label:
-            header_values["订单类型"] = default_label
+        prior_order_type = file_result.get("header_values", {}).get("订单类型", "")
+        if prior_order_type in get_order_type_labels(select_text):
+            header_values["订单类型"] = prior_order_type
+        else:
+            default_label = get_default_order_type_label(select_text)
+            if default_label:
+                header_values["订单类型"] = default_label
     file_result["header_values"] = header_values
 
     tk.Label(tab, text="单据头", anchor="w",
@@ -582,6 +610,55 @@ def _build_file_tab(file_result, headers, header_fields, detail_fields, select_t
     file_result["tree"] = detail_tree
     file_result["tab"] = tab
     return detail_tree
+
+
+def _refresh_file_status_label(file_result):
+    """按文件最新状态刷新页签顶部状态文案。"""
+    status_label = file_result.get("status_label")
+    if status_label is None:
+        return
+    status_text = f"状态：{file_result['status']}"
+    if not file_result.get("rows"):
+        status_text += "；当前无明细数据"
+    if file_result.get("message"):
+        status_text += f"；{file_result['message']}"
+    status_label.config(
+        text=status_text,
+        fg=("#D97706" if file_result["status"] == "结果未生成"
+            else "#B42318" if file_result["status"] == "失败" else "#111827"),
+    )
+
+
+def _replace_file_tab(file_result, headers, header_fields, detail_fields,
+                      select_text):
+    """重建单个文件页签，保留原页签位置与选中状态。"""
+    global active_tree
+    old_tab = file_result["tab"]
+    was_selected = str(preview_notebook.select()) == str(old_tab)
+    index = preview_notebook.index(old_tab)
+    active_tree = None
+    old_tab.destroy()
+    _build_file_tab(
+        file_result, headers, header_fields, detail_fields, select_text,
+        add_tab=False,
+    )
+    preview_notebook.insert(
+        index,
+        file_result["tab"],
+        text=_short_tab_label(file_result["filename"]),
+    )
+    if was_selected:
+        preview_notebook.select(file_result["tab"])
+    on_preview_tab_changed()
+
+
+def _active_preview_file():
+    """返回当前选中的预览文件数据，未选中时返回 None。"""
+    selected_tab = preview_notebook.select()
+    for info in preview_files:
+        if str(info["tab"]) == selected_tab:
+            return info
+    return None
 
 
 def show_preview(select_text, headers, file_results,
@@ -607,50 +684,69 @@ def show_preview(select_text, headers, file_results,
     btn.config(text="选择文件并开始处理", state=tk.NORMAL)
     abort_btn.config(state=tk.DISABLED)
     total_rows = sum(len(info["tree"].get_children()) for info in preview_files)
+    pending_count = sum(
+        info["status"] == "结果未生成" for info in preview_files
+    )
     print_log(f"预览数据就绪：模板 {select_text}，页签数 {len(preview_files)}，"
               f"明细行数 {total_rows}，"
-              f"成功 {success_count}，失败 {fail_count}")
+              f"成功 {success_count}，失败 {fail_count}，"
+              f"结果未生成 {pending_count}")
     set_progress_state(100, "处理进度：完成")
 
 
 def on_preview_tab_changed(_event=None):
     """切换页签时更新当前预览文件名和操作按钮状态。"""
     global active_tree
-    selected_tab = preview_notebook.select()
-    for info in preview_files:
-        if str(info["tab"]) == selected_tab:
-            if active_tree is not None and active_tree is not info["tree"]:
-                active_tree.clear_clipboard()
-            active_tree = info["tree"]
-            current_file_label.config(text=f"当前预览文件：{info['filename']}")
-            refresh_export_state()
-            return
+    info = _active_preview_file()
+    if info is not None:
+        if active_tree is not None and active_tree is not info["tree"]:
+            active_tree.clear_clipboard()
+        active_tree = info["tree"]
+        current_file_label.config(text=f"当前预览文件：{info['filename']}")
+        continue_btn.config(
+            state=tk.NORMAL if not continue_query_active
+            and info["status"] == "结果未生成" else tk.DISABLED
+        )
+        refresh_export_state()
+        return
     if active_tree is not None:
         active_tree.clear_clipboard()
     active_tree = None
     current_file_label.config(text="当前预览文件：未选择")
+    continue_btn.config(state=tk.DISABLED)
     refresh_export_state()
 
 
 def refresh_row_action_state():
     """按当前选中行与复制内容刷新插入/复制/粘贴按钮。"""
     active = active_tree is not None
-    insert_btn.config(state=tk.NORMAL if active else tk.DISABLED)
+    active_info = _active_preview_file()
+    editable = active and (
+        active_info is None or active_info.get("status") != "结果未生成"
+    )
+    insert_btn.config(state=tk.NORMAL if editable else tk.DISABLED)
     copy_btn.config(
-        state=tk.NORMAL if active and active_tree.selection() else tk.DISABLED
+        state=tk.NORMAL if editable and active_tree.selection() else tk.DISABLED
     )
     paste_btn.config(
-        state=tk.NORMAL if active and active_tree.has_clipboard() else tk.DISABLED
+        state=tk.NORMAL if editable and active_tree.has_clipboard() else tk.DISABLED
     )
 
 
 def refresh_export_state():
     """根据所有页签当前明细行数和操作状态刷新底部按钮。"""
     has_rows = any(bool(info["tree"].get_children()) for info in preview_files)
+    has_pending = any(info["status"] == "结果未生成" for info in preview_files)
+    active_info = _active_preview_file()
+    tree_editable = active_tree is not None and (
+        active_info is None or active_info.get("status") != "结果未生成"
+    )
     refresh_row_action_state()
-    export_btn.config(state=tk.NORMAL if has_rows else tk.DISABLED)
-    add_btn.config(state=tk.NORMAL if active_tree else tk.DISABLED)
-    del_btn.config(state=tk.NORMAL if active_tree else tk.DISABLED)
+    export_btn.config(
+        state=tk.NORMAL if has_rows and not has_pending else tk.DISABLED
+    )
+    add_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
+    del_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
 
 
 def active_tree_add_row():
@@ -690,13 +786,15 @@ def active_tree_paste_row():
 
 def clear_preview():
     """清空所有预览页签并恢复初始状态。"""
-    global preview_select_text, preview_files, active_tree
+    global preview_select_text, preview_files, active_tree, continue_query_active
     for info in preview_files:
         info["tab"].destroy()
     preview_files = []
     active_tree = None
+    continue_query_active = False
     preview_select_text = ""
     current_file_label.config(text="当前预览文件：未选择")
+    continue_btn.config(state=tk.DISABLED)
     refresh_export_state()
     set_progress_state(0, "处理进度：待开始")
     btn.config(text="选择文件并开始处理", state=tk.NORMAL)
@@ -704,8 +802,98 @@ def clear_preview():
     mock_check.config(state=tk.NORMAL)
 
 
+def continue_current_task():
+    """继续查询当前“结果未生成”页签记录的原 OCR 任务。"""
+    global continue_query_active, continue_thread
+    if continue_query_active:
+        return
+    info = _active_preview_file()
+    if info is None or info.get("status") != "结果未生成":
+        return
+    req_uuid = str(info.get("req_uuid", "")).strip()
+    if not req_uuid:
+        messagebox.showwarning("温馨提示", "当前文件缺少原任务 reqUuid，无法继续查询")
+        return
+
+    abort_event.clear()
+    continue_query_active = True
+    continue_btn.config(state=tk.DISABLED)
+    abort_btn.config(state=tk.NORMAL)
+    set_progress_state(
+        50,
+        f"处理进度：正在续查 {os.path.basename(info['filename'])}...",
+        "#D97706",
+    )
+    continue_thread = threading.Thread(
+        target=continue_task_worker,
+        args=(info, preview_select_text, req_uuid, abort_event),
+        daemon=True,
+    )
+    continue_thread.start()
+    win.after(100, poll_ui_queue)
+
+
+def continue_task_worker(info, select_text, req_uuid, cancel_event):
+    """后台继续查询原 OCR 任务，成功后解析并回传预览刷新消息。"""
+    filename = info["filename"]
+    print_log(f"继续查询原任务 reqUuid={req_uuid}，文件：{filename}")
+    try:
+        _, ocr_result_dict = call_get_result_api(req_uuid, cancel_event)
+        if cancel_event.is_set():
+            raise OCRAborted("OCR识别已由用户中止")
+        if not (ocr_result_dict and ocr_result_dict.get("status") is True):
+            raise Exception("OCR返回识别状态异常")
+        commit_result = ocr_result_dict.get("data", {}).get("commitResult", {})
+        parsed_rows = parse_commit_result(select_text, commit_result, filename)
+        updated_log_row = list(info.get("log_row", []))
+        if len(updated_log_row) > 6:
+            updated_log_row[5] = "成功"
+            updated_log_row[6] = "处理成功"
+        if cancel_event.is_set():
+            raise OCRAborted("OCR识别已由用户中止")
+        print_log(f"✅ [{filename}] 继续查询成功")
+        ui_message_queue.put((
+            "continue_success", info, select_text, "成功", "处理成功",
+            parsed_rows, updated_log_row,
+        ))
+    except OCRResultTimeout:
+        print_log(f"⏳ [{filename}] 继续查询5分钟仍未生成结果")
+        ui_message_queue.put((
+            "continue_pending", info,
+            "再次查询5分钟仍未生成结果，可继续查询原任务",
+        ))
+    except OCRAborted:
+        print_log(f"⏹ [{filename}] 继续查询已由用户中止")
+        ui_message_queue.put(("continue_aborted", info))
+    except Exception as e:
+        print_log(f"❌ [{filename}] 继续查询失败：{e}")
+        ui_message_queue.put((
+            "continue_pending", info, f"继续查询失败：{e}",
+        ))
+
+
+def _apply_continue_success(info, select_text):
+    """按续查成功结果重建对应页签，并刷新可编辑/导出状态。"""
+    headers = get_core_headers(select_text)
+    header_fields, detail_fields = get_preview_layout(select_text)
+    _replace_file_tab(info, headers, header_fields, detail_fields, select_text)
+    refresh_export_state()
+
+
 def start_export():
     """选择导出目录后收集有明细的文件页签并启动批量导出线程。"""
+    pending_files = [
+        info["filename"] for info in preview_files
+        if info["status"] == "结果未生成"
+    ]
+    if pending_files:
+        messagebox.showwarning(
+            "温馨提示",
+            "以下文件结果未生成，请先点击“继续查询原任务”：\n"
+            + "\n".join(pending_files),
+        )
+        return
+
     missing_files = []
     for info in preview_files:
         _, detail_rows = info["tree"].get_data()
@@ -823,6 +1011,7 @@ def update_progress(done, total):
 
 def poll_ui_queue():
     """主线程轮询处理结果消息，并驱动界面状态更新。"""
+    global continue_query_active
     flush_log()
     while True:
         try:
@@ -850,9 +1039,35 @@ def poll_ui_queue():
         elif kind == "export_error":
             refresh_export_state()
             messagebox.showerror("错误", payload[0])
+        elif kind == "continue_aborted":
+            info = payload[0]
+            info["message"] = "继续查询已中止"
+            continue_query_active = False
+            abort_event.clear()
+            _refresh_file_status_label(info)
+            on_preview_tab_changed()
+            finish_abort_state()
+        elif kind == "continue_success":
+            (info, select_text, status, message, parsed_rows,
+             updated_log_row) = payload
+            info["status"] = status
+            info["message"] = message
+            info["rows"] = parsed_rows
+            info["log_row"] = updated_log_row
+            continue_query_active = False
+            _apply_continue_success(info, select_text)
+            set_progress_state(100, "处理进度：续查完成")
+        elif kind == "continue_pending":
+            info, message = payload
+            info["message"] = message
+            continue_query_active = False
+            _refresh_file_status_label(info)
+            on_preview_tab_changed()
+            set_progress_state(100, "处理进度：续查未生成结果", "#D97706")
 
     if (worker_thread is not None and worker_thread.is_alive()) or \
-       (export_thread is not None and export_thread.is_alive()):
+       (export_thread is not None and export_thread.is_alive()) or \
+       (continue_thread is not None and continue_thread.is_alive()):
         win.after(100, poll_ui_queue)
 
 
@@ -863,6 +1078,10 @@ win.geometry("1180x760")
 
 top = tk.Frame(win)
 top.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+BUTTON_FONT = tkfont.nametofont("TkDefaultFont").copy()
+BUTTON_FONT.configure(weight="bold")
+DISABLED_FOREGROUND = "#111827"
 
 tk.Label(top, text="选择模版规则：", font=("黑体", 11)).pack(side=tk.LEFT)
 combo_model = ttk.Combobox(top, width=28, font=("黑体", 11), state="readonly")
@@ -875,16 +1094,19 @@ mock_check = tk.Checkbutton(top, text="模拟数据", variable=mock_var, font=("
 mock_check.pack(side=tk.LEFT, padx=(0, 20))
 
 btn = tk.Button(top, text="选择文件并开始处理", command=run_task, width=22,
-                bg="#4CAF50", fg="#0B3D0F")
+                bg="#4CAF50", fg="#0B3D0F", font=BUTTON_FONT,
+                disabledforeground=DISABLED_FOREGROUND)
 btn.pack(side=tk.LEFT)
 export_btn = tk.Button(top, text="确认并导出", command=start_export,
-                       width=16, bg="#2196F3", fg="#0A2540", state=tk.DISABLED)
+                       width=16, bg="#2196F3", fg="#0A2540", font=BUTTON_FONT,
+                       disabledforeground=DISABLED_FOREGROUND,
+                       state=tk.DISABLED)
 export_btn.pack(side=tk.LEFT, padx=(8, 0))
 abort_btn = tk.Button(
     top, text="中止", command=abort_processing, width=10,
-    bg="#D92D20", fg="#111827",
+    bg="#D92D20", fg="#111827", font=BUTTON_FONT,
     activebackground="#B42318", activeforeground="#111827",
-    disabledforeground="#6B7280",
+    disabledforeground=DISABLED_FOREGROUND,
     state=tk.DISABLED,
 )
 abort_btn.pack(side=tk.LEFT, padx=(8, 0))
@@ -925,20 +1147,37 @@ op_frame = tk.Frame(win)
 op_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
 add_btn = tk.Button(op_frame, text="新增行", command=active_tree_add_row,
-                    width=10, state=tk.DISABLED)
+                    width=10, font=BUTTON_FONT,
+                    disabledforeground=DISABLED_FOREGROUND,
+                    state=tk.DISABLED)
 add_btn.pack(side=tk.LEFT, padx=(0, 8))
 insert_btn = tk.Button(op_frame, text="插入行", command=active_tree_insert_row,
-                       width=10, state=tk.DISABLED)
+                       width=10, font=BUTTON_FONT,
+                       disabledforeground=DISABLED_FOREGROUND,
+                       state=tk.DISABLED)
 insert_btn.pack(side=tk.LEFT, padx=(0, 8))
 copy_btn = tk.Button(op_frame, text="复制行", command=active_tree_copy_selected,
-                     width=10, state=tk.DISABLED)
+                     width=10, font=BUTTON_FONT,
+                     disabledforeground=DISABLED_FOREGROUND,
+                     state=tk.DISABLED)
 copy_btn.pack(side=tk.LEFT, padx=(0, 8))
 paste_btn = tk.Button(op_frame, text="粘贴行", command=active_tree_paste_row,
-                      width=10, state=tk.DISABLED)
+                      width=10, font=BUTTON_FONT,
+                      disabledforeground=DISABLED_FOREGROUND,
+                      state=tk.DISABLED)
 paste_btn.pack(side=tk.LEFT, padx=(0, 8))
 del_btn = tk.Button(op_frame, text="删除行", command=active_tree_delete_selected,
-                    width=10, state=tk.DISABLED)
+                    width=10, font=BUTTON_FONT,
+                    disabledforeground=DISABLED_FOREGROUND,
+                    state=tk.DISABLED)
 del_btn.pack(side=tk.LEFT, padx=(0, 8))
+continue_btn = tk.Button(
+    op_frame, text="继续查询原任务", command=continue_current_task,
+    width=16, bg="#D97706", fg="#111827", font=BUTTON_FONT,
+    disabledforeground=DISABLED_FOREGROUND,
+    state=tk.DISABLED,
+)
+continue_btn.pack(side=tk.LEFT, padx=(10, 0))
 
 log_text = tk.Text(win, height=6, width=110)
 log_text.pack(fill=tk.X, padx=10, pady=(2, 10))

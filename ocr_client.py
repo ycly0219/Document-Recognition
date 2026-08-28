@@ -14,7 +14,7 @@ from config import (
     OCR_APP_SECRET,
     OCR_CALLBACK_URL,
     OCR_DOC_TYPE,
-    OCR_MAX_RETRY,
+    OCR_MAX_POLL_SECONDS,
     OCR_ORG_ID,
     OCR_REGIONAL_CODE,
     OCR_RETRY_INTERVAL,
@@ -29,6 +29,10 @@ from logging_utils import print_log
 
 class OCRAborted(Exception):
     """OCR 轮询被调用方主动中止。"""
+
+
+class OCRResultTimeout(Exception):
+    """单个文件轮询达到最长等待时间，识别结果仍未生成。"""
 
 
 def _sleep_or_abort(seconds, cancel_event):
@@ -121,15 +125,16 @@ def call_process_api(file_url, filename, file_id, model_id, rule_name):
 
 def call_get_result_api(req_uuid, cancel_event=None):
     """按 reqUuid 轮询 OCR 识别结果，直到有有效 commitResult。"""
-    max_retry = OCR_MAX_RETRY
     retry_interval = OCR_RETRY_INTERVAL
     current_retry = 0
+    deadline = time.time() + OCR_MAX_POLL_SECONDS
 
-    while current_retry < max_retry:
+    while time.time() < deadline:
         if cancel_event is not None and cancel_event.is_set():
             raise OCRAborted("OCR识别已由用户中止")
         current_retry += 1
-        print_log(f"第{current_retry}/{max_retry}次查询OCR结果 reqUuid={req_uuid}")
+        print_log(f"第{current_retry}次查询OCR结果 reqUuid={req_uuid}，"
+                  f"单个文件最长等待{OCR_MAX_POLL_SECONDS}秒")
         try:
             params = {"reqUuid": req_uuid}
             response = requests.get(GET_RESULT_API_URL, params=params, timeout=30)
@@ -138,7 +143,9 @@ def call_get_result_api(req_uuid, cancel_event=None):
 
             if not res_dict.get("status"):
                 print_log("接口status=false，等待重试")
-                _sleep_or_abort(retry_interval, cancel_event)
+                remaining = deadline - time.time()
+                if remaining > 0:
+                    _sleep_or_abort(min(retry_interval, remaining), cancel_event)
                 continue
 
             commit_result = res_dict.get("data", {}).get("commitResult")
@@ -146,13 +153,20 @@ def call_get_result_api(req_uuid, cancel_event=None):
                 print_log("OCR识别结果获取成功")
                 return "", res_dict
             else:
-                print_log("识别结果未生成，等待3秒")
-                _sleep_or_abort(retry_interval, cancel_event)
+                print_log("识别结果未生成，继续等待")
+                remaining = deadline - time.time()
+                if remaining > 0:
+                    _sleep_or_abort(min(retry_interval, remaining), cancel_event)
 
         except OCRAborted:
             raise
         except Exception as e:
             print_log(f"第{current_retry}次查询异常: {str(e)}")
-            _sleep_or_abort(retry_interval, cancel_event)
+            remaining = deadline - time.time()
+            if remaining > 0:
+                _sleep_or_abort(min(retry_interval, remaining), cancel_event)
 
-    raise Exception(f"查询{max_retry}次无有效识别结果")
+    print_log(f"单个文件轮询达到{OCR_MAX_POLL_SECONDS}秒，结果未生成")
+    raise OCRResultTimeout(
+        f"单个文件最长等待{OCR_MAX_POLL_SECONDS}秒，识别结果未生成"
+    )
