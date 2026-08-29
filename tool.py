@@ -1165,7 +1165,8 @@ def poll_ui_queue():
 # ========== 界面部分 ==========
 win = tk.Tk()
 win.title("GE单据批量OCR处理工具")
-win.geometry("1180x760")
+max_width, max_height = win.maxsize()
+win.geometry(f"{max_width}x{max_height}")
 
 top = tk.Frame(win)
 top.pack(fill=tk.X, padx=10, pady=(10, 0))
@@ -1202,15 +1203,15 @@ abort_btn = tk.Button(
 )
 abort_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-progress_frame = tk.Frame(win)
-progress_frame.pack(fill=tk.X, padx=10, pady=(8, 0))
+progress_frame = tk.Frame(top)
+progress_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
 
 progress_label = tk.Label(progress_frame, text="处理进度：待开始",
                           font=("黑体", 11, "bold"), anchor="w")
-progress_label.pack(fill=tk.X)
+progress_label.pack(side=tk.LEFT)
 
 progress_canvas = tk.Canvas(progress_frame, height=14, highlightthickness=0)
-progress_canvas.pack(fill=tk.X, pady=(4, 0))
+progress_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0), pady=7)
 progress_canvas.bind("<Configure>", lambda _event: draw_progress_canvas())
 
 table_frame = tk.Frame(win)
@@ -1280,4 +1281,5 @@ query_log_btn.pack(side=tk.LEFT, padx=(8, 0))
 win.after(200, poll_log_queue)
 
 if __name__ == "__main__":
+    win.state("zoomed")
     win.mainloop()
