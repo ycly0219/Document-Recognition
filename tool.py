@@ -45,6 +45,7 @@ preview_select_text = ""
 preview_files = []
 active_tree = None
 continue_query_active = False
+last_combo_text = ""
 progress_percent = 0
 progress_color = "#16A34A"
 session_log_lines = []
@@ -56,6 +57,8 @@ if sys.platform == "win32":
 else:
     PREVIEW_HEADING_FONT = ("黑体", 15, "bold")
 MAX_BATCH_FILES = 5
+MANUAL_STATUS = "人工填写"
+MANUAL_FILENAME = "空白单据"
 
 
 class EditableTreeview(ttk.Treeview):
@@ -733,14 +736,69 @@ def _replace_file_tab(file_result, headers, header_fields, detail_fields,
         file_result, headers, header_fields, detail_fields, select_text,
         add_tab=False,
     )
-    preview_notebook.insert(
-        index,
-        file_result["tab"],
-        text=_short_tab_label(file_result["filename"]),
-    )
-    if was_selected:
+    if preview_notebook.tabs():
+        preview_notebook.insert(
+            index,
+            file_result["tab"],
+            text=_short_tab_label(file_result["filename"]),
+        )
+        if was_selected:
+            preview_notebook.select(file_result["tab"])
+    else:
+        preview_notebook.add(
+            file_result["tab"],
+            text=_short_tab_label(file_result["filename"]),
+        )
         preview_notebook.select(file_result["tab"])
     on_preview_tab_changed()
+
+
+def _background_task_active():
+    """返回是否有后台处理、导出或续查线程正在运行。"""
+    return (
+        (worker_thread is not None and worker_thread.is_alive())
+        or (export_thread is not None and export_thread.is_alive())
+        or (continue_thread is not None and continue_thread.is_alive())
+    )
+
+
+def create_blank_preview(select_text):
+    """创建当前模板的空白可编辑页签，用于不选择文件的手工填写。"""
+    global preview_select_text, preview_files, active_tree
+    headers = get_core_headers(select_text)
+    header_fields, detail_fields = get_preview_layout(select_text)
+    file_result = {
+        "filename": MANUAL_FILENAME,
+        "status": MANUAL_STATUS,
+        "message": "未选择文件，等待人工填写",
+        "rows": [],
+        "req_uuid": "",
+        "log_row": [MANUAL_FILENAME, "", "", "", "", MANUAL_STATUS, MANUAL_STATUS, ""],
+        "manual": True,
+    }
+    preview_select_text = select_text
+    preview_files = [file_result]
+    active_tree = None
+    _build_file_tab(
+        file_result, headers, header_fields, detail_fields, select_text
+    )
+    preview_notebook.select(0)
+    on_preview_tab_changed()
+    set_progress_state(0, "处理进度：待开始")
+
+
+def on_template_changed(_event=None):
+    """选择模板时清空旧预览并预渲染当前模板的空白页。"""
+    global last_combo_text
+    selected_text = combo_model.get().strip()
+    if selected_text not in MODEL_MAP:
+        return
+    if _background_task_active():
+        combo_model.set(last_combo_text)
+        return
+    last_combo_text = selected_text
+    clear_preview()
+    create_blank_preview(selected_text)
 
 
 def _active_preview_file():
@@ -812,9 +870,7 @@ def refresh_row_action_state():
     """按当前选中行与复制内容刷新插入/复制/粘贴按钮。"""
     active = active_tree is not None
     active_info = _active_preview_file()
-    editable = active and (
-        active_info is None or active_info.get("status") != "结果未生成"
-    )
+    editable = active and active_info is not None
     insert_btn.config(state=tk.NORMAL if editable else tk.DISABLED)
     copy_btn.config(
         state=tk.NORMAL if editable and active_tree.selection() else tk.DISABLED
@@ -827,15 +883,10 @@ def refresh_row_action_state():
 def refresh_export_state():
     """根据所有页签当前明细行数和操作状态刷新底部按钮。"""
     has_rows = any(bool(info["tree"].get_children()) for info in preview_files)
-    has_pending = any(info["status"] == "结果未生成" for info in preview_files)
     active_info = _active_preview_file()
-    tree_editable = active_tree is not None and (
-        active_info is None or active_info.get("status") != "结果未生成"
-    )
+    tree_editable = active_tree is not None and active_info is not None
     refresh_row_action_state()
-    export_btn.config(
-        state=tk.NORMAL if has_rows and not has_pending else tk.DISABLED
-    )
+    export_btn.config(state=tk.NORMAL if has_rows else tk.DISABLED)
     add_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
     del_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
 
@@ -971,20 +1022,23 @@ def _apply_continue_success(info, select_text):
     refresh_export_state()
 
 
+def _manual_export_base_name(select_text, header_values):
+    """根据手工空白页所属模板取单据编号作为导出基准名。"""
+    field_by_template = {
+        "GE-ORACLE拣货单": "Order Number",
+        "GE-OSCAR拣货单": "服务申请号",
+        "GE-发票单": "INVOICE NO",
+    }
+    value = str(
+        header_values.get(field_by_template.get(select_text, ""), "")
+    ).strip()
+    for char in ("\\", "/", ":", "*", "?", '"', "<", ">", "|"):
+        value = value.replace(char, "_")
+    return value or MANUAL_FILENAME
+
+
 def start_export():
     """选择导出目录后收集有明细的文件页签并启动批量导出线程。"""
-    pending_files = [
-        info["filename"] for info in preview_files
-        if info["status"] == "结果未生成"
-    ]
-    if pending_files:
-        messagebox.showwarning(
-            "温馨提示",
-            "以下文件结果未生成，请先点击“继续查询原任务”：\n"
-            + "\n".join(pending_files),
-        )
-        return
-
     missing_files = []
     for info in preview_files:
         _, detail_rows = info["tree"].get_data()
@@ -1034,7 +1088,12 @@ def export_worker(export_targets, output_dir):
     exported = []
     failures = []
     for info, rows in export_targets:
-        base_name = os.path.splitext(os.path.basename(info["filename"]))[0]
+        if info.get("manual"):
+            base_name = _manual_export_base_name(
+                preview_select_text, info.get("header_values", {})
+            )
+        else:
+            base_name = os.path.splitext(os.path.basename(info["filename"]))[0]
         output_file = os.path.join(
             output_dir, f"{base_name}_识别结果_{timestamp}.xlsx"
         )
@@ -1180,6 +1239,8 @@ combo_model = ttk.Combobox(top, width=28, font=("黑体", 11), state="readonly")
 combo_model["values"] = list(MODEL_MAP.keys())
 combo_model.set("")
 combo_model.pack(side=tk.LEFT, padx=(0, 20))
+last_combo_text = combo_model.get()
+combo_model.bind("<<ComboboxSelected>>", on_template_changed)
 
 mock_var = tk.BooleanVar(value=False)
 mock_check = tk.Checkbutton(top, text="模拟数据", variable=mock_var, font=("黑体", 11))
