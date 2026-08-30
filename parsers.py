@@ -274,11 +274,11 @@ def _parse_oracle_picklist(commit_result, filename):
             customer_po,
             delivery,
         ])
-    return rows
+    return rows, []
 
 
 def _parse_oscar_picklist(commit_result, filename):
-    """解析 GE-OSCAR 拣货单，返回明细行列表。"""
+    """解析 GE-OSCAR 拣货单，返回明细行列表与空拆分分组。"""
     service_apply_no = commit_result.get("服务申请号", {}).get("value", "").strip()
     sr_no = commit_result.get("SR编号", {}).get("value", "").strip()
     supplier = commit_result.get("供应商", {}).get("value", "").strip()
@@ -316,11 +316,14 @@ def _parse_oscar_picklist(commit_result, filename):
             lead_time, consignee_tel, apply_note, cust_device_id, sr_no,
             track_no,
         ])
-    return rows
+    return rows, []
 
 
 def _parse_invoice(commit_result, filename):
-    """解析 GE-发票单，并按 LPN/Serial 与数量关系拆分明细。"""
+    """解析 GE-发票单，并按 LPN/Serial 与数量关系拆分明细。
+
+    返回 (明细行列表, 拆分汇总元数据)；明细行仍保持可导出的平铺结构。
+    """
     order_type = get_default_order_type_label("GE-发票单")
     invoice_no = commit_result.get("INVOICE NO", {}).get("value", "").strip()
     delivery = commit_result.get("DELIVERY", {}).get("value", "").strip()
@@ -337,7 +340,8 @@ def _parse_invoice(commit_result, filename):
 
     print_log(f"{filename} INVOICE NO:{invoice_no} DELIVERY:{delivery} DATE:{doc_date} CARRIER:{carrier} HAWB:{hawb} 明细总行数:{len(material_list)}")
     rows = []
-    for item in material_list:
+    split_groups = []
+    for source_index, item in enumerate(material_list):
         raw_qty_str = item.get("QTY", {}).get("value", "").strip()
         item_num = item.get("ITEM NUMBER", {}).get("value", "").strip()
         country_of_origin = item.get("COUNTRY OF ORIGIN", {}).get("value", "").strip()
@@ -347,6 +351,12 @@ def _parse_invoice(commit_result, filename):
         sales_order = item.get("SALES ORDER NO", {}).get("value", "").strip()
         customer_po = item.get("CUSTOMER PO", {}).get("value", "").strip()
         expire = item.get("Expiration Date", {}).get("value", "").strip()
+        split_summary_row = [
+            order_type, invoice_no, item_num, raw_qty_str,
+            "原始行汇总", "", lot, expire,
+            country_of_origin, sales_order, customer_po,
+            doc_date, delivery, carrier, hawb
+        ]
 
         # 清洗LPN列表
         lpn_list = [lpn.strip() for lpn in raw_lpn_str.split(",") if lpn.strip()]
@@ -365,12 +375,20 @@ def _parse_invoice(commit_result, filename):
         if serial_count == 0:
             if lpn_count == qty_val and lpn_count > 0:
                 print_log(f"Serial为空，匹配LPN规则1：LPN数量={lpn_count}=QTY{qty_val}，逐个拆分")
+                child_indexes = []
                 for single_lpn in lpn_list:
+                    child_indexes.append(len(rows))
                     rows.append([
                         order_type, invoice_no, item_num, "1", single_lpn, "", lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
+                split_groups.append({
+                    "source_index": source_index,
+                    "source_qty": raw_qty_str,
+                    "summary_row": split_summary_row,
+                    "child_indexes": child_indexes,
+                })
             elif lpn_count == 1 and qty_val > 0:
                 single_lpn = lpn_list[0]
                 print_log(f"Serial为空，匹配LPN规则2：单LPN，QTY={qty_val}，保留一行")
@@ -391,14 +409,22 @@ def _parse_invoice(commit_result, filename):
             # 场景1：LPN数量=QTY，Serial数量也等于QTY，一一对应拆分
             if lpn_count == qty_val and serial_count == qty_val and qty_val > 0:
                 print_log(f"匹配规则1：LPN/Serial数量={lpn_count}=QTY{qty_val}，逐行匹配拆分")
+                child_indexes = []
                 for idx in range(qty_val):
                     single_lpn = lpn_list[idx]
                     single_serial = serial_list[idx]
+                    child_indexes.append(len(rows))
                     rows.append([
                         order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
+                split_groups.append({
+                    "source_index": source_index,
+                    "source_qty": raw_qty_str,
+                    "summary_row": split_summary_row,
+                    "child_indexes": child_indexes,
+                })
             # 场景2：仅1个LPN、仅1个Serial，按QTY循环复制N行
             elif lpn_count == 1 and serial_count == 1 and qty_val > 0:
                 single_lpn = lpn_list[0]
@@ -413,22 +439,38 @@ def _parse_invoice(commit_result, filename):
             elif lpn_count == 1 and serial_count == qty_val and qty_val > 0:
                 single_lpn = lpn_list[0]
                 print_log(f"匹配规则3：单LPN，Serial数量={serial_count}=QTY{qty_val}，拆分Serial多行")
+                child_indexes = []
                 for single_serial in serial_list:
+                    child_indexes.append(len(rows))
                     rows.append([
                         order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
+                split_groups.append({
+                    "source_index": source_index,
+                    "source_qty": raw_qty_str,
+                    "summary_row": split_summary_row,
+                    "child_indexes": child_indexes,
+                })
             # 场景4：只有LPN多个、Serial单个，且lpn_count == qty_val
             elif serial_count == 1 and lpn_count == qty_val and qty_val > 0:
                 single_serial = serial_list[0]
                 print_log(f"匹配规则4：单Serial，LPN数量={lpn_count}=QTY{qty_val}，拆分LPN多行")
+                child_indexes = []
                 for single_lpn in lpn_list:
+                    child_indexes.append(len(rows))
                     rows.append([
                         order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
+                split_groups.append({
+                    "source_index": source_index,
+                    "source_qty": raw_qty_str,
+                    "summary_row": split_summary_row,
+                    "child_indexes": child_indexes,
+                })
             # 其他所有不匹配场景，保留原始一行，LPN/Serial逗号拼接不拆分
             else:
                 rows.append([
@@ -436,11 +478,11 @@ def _parse_invoice(commit_result, filename):
                     lot, expire, country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
-    return rows
+    return rows, split_groups
 
 
 def parse_commit_result(select_text, commit_result, filename):
-    """按当前模板解析单份 OCR 识别结果，返回明细行列表。"""
+    """按当前模板解析单份 OCR 识别结果，返回 (明细行列表, 拆分汇总元数据)。"""
     if select_text == "GE-ORACLE拣货单":
         return _parse_oracle_picklist(commit_result, filename)
     elif select_text == "GE-OSCAR拣货单":

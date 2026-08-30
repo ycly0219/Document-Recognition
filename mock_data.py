@@ -74,6 +74,33 @@ def generate_mock_data(select_text):
     else:
         raise ValueError(f"未知模板: {select_text}")
 
+    invoice_split_groups = []
+    if select_text == "GE-发票单":
+        invoice_split_groups = [
+            {
+                "source_index": 0,
+                "source_qty": "3",
+                "summary_row": [
+                    default_label, "INV20260821-01", "ITEM-INV-001", "3",
+                    "原始行汇总", "", "LOT-01", "2026/09/30",
+                    "CN", "SO-001", "PO-001", "2026/08/21",
+                    "DEL-20260821", "FEDEX", "HAWB-001"
+                ],
+                "child_indexes": [0, 1, 2],
+            },
+            {
+                "source_index": 1,
+                "source_qty": "2",
+                "summary_row": [
+                    default_label, "INV20260821-01", "ITEM-INV-002", "2",
+                    "原始行汇总", "", "LOT-02", "2026/10/31",
+                    "US", "SO-002", "PO-002", "2026/08/21",
+                    "DEL-20260821", "FEDEX", "HAWB-001"
+                ],
+                "child_indexes": [3, 4],
+            },
+        ]
+
     split_index = {
         "GE-ORACLE拣货单": 2,
         "GE-OSCAR拣货单": 2,
@@ -85,12 +112,14 @@ def generate_mock_data(select_text):
             "status": "成功",
             "message": "模拟数据，未调用 OCR",
             "rows": rows[:split_index],
+            "split_groups": invoice_split_groups,
         },
         {
             "filename": "模拟文件-02.pdf",
             "status": "成功",
             "message": "模拟数据，未调用 OCR",
             "rows": rows[split_index:],
+            "split_groups": [],
         },
     ]
     return headers, file_results

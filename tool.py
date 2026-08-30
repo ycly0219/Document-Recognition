@@ -84,6 +84,8 @@ class EditableTreeview(ttk.Treeview):
         headers = self["columns"]
         if not row_id or col_index < 0 or col_index >= len(headers):
             return
+        if self._is_summary_row(row_id):
+            return
         bbox = self.bbox(row_id, self.identify_column(event.x))
         if not bbox:
             return
@@ -124,16 +126,36 @@ class EditableTreeview(ttk.Treeview):
         active_tree_paste_row()
         return "break"
 
+    def _is_summary_row(self, row_id):
+        return "summary_row" in self.item(row_id, "tags")
+
+    def _exportable_rows_in_order(self):
+        ordered = []
+
+        def visit(parent_id):
+            for row_id in self.get_children(parent_id):
+                if not parent_id and self._is_summary_row(row_id):
+                    visit(row_id)
+                else:
+                    ordered.append(row_id)
+
+        visit("")
+        return ordered
+
     def _selected_rows_in_order(self):
-        rows = self.selection()
-        if not rows:
+        selected = set(self.selection())
+        if not selected:
             return []
-        children = self.get_children()
-        position = {row_id: index for index, row_id in enumerate(children)}
-        return sorted(rows, key=lambda row_id: position.get(row_id, len(children)))
+        return [
+            row_id for row_id in self._exportable_rows_in_order()
+            if row_id in selected
+        ]
 
     def has_clipboard(self):
         return bool(self._clipboard)
+
+    def has_copyable_selection(self):
+        return bool(self._selected_rows_in_order())
 
     def copy_selected(self):
         selected = self._selected_rows_in_order()
@@ -155,14 +177,24 @@ class EditableTreeview(ttk.Treeview):
             return None
         selected = self._selected_rows_in_order()
         if selected:
-            children = self.get_children()
-            index = children.index(selected[-1]) + 1
+            target = selected[-1]
+        elif self.selection():
+            target = self.selection()[-1]
         else:
+            target = None
+        if target is not None:
+            parent_id = self.parent(target)
+            children = self.get_children(parent_id)
+            index = children.index(target) + 1
+        else:
+            parent_id = ""
             index = tk.END
         row_id = self.insert(
-            "", index, values=("",) * len(self["columns"]),
+            parent_id, index, values=("",) * len(self["columns"]),
             tags=("new_row",)
         )
+        if parent_id:
+            self.item(parent_id, open=True)
         self._renumber()
         self.selection_set(row_id)
         self.see(row_id)
@@ -172,18 +204,28 @@ class EditableTreeview(ttk.Treeview):
         if not self._clipboard or not self["columns"]:
             return False
         selected = self._selected_rows_in_order()
-        children = self.get_children()
         if selected:
-            index = children.index(selected[-1]) + 1
+            target = selected[-1]
+        elif self.selection():
+            target = self.selection()[-1]
         else:
-            index = len(children)
+            target = None
+        if target is not None:
+            parent_id = self.parent(target)
+            children = self.get_children(parent_id)
+            index = children.index(target) + 1
+        else:
+            parent_id = ""
+            index = len(self.get_children())
         pasted = []
         for offset, values in enumerate(self._clipboard):
             row_id = self.insert(
-                "", index + offset, values=list(values),
+                parent_id, index + offset, values=list(values),
                 tags=("new_row",)
             )
             pasted.append(row_id)
+        if parent_id:
+            self.item(parent_id, open=True)
         self._renumber()
         self.selection_set(*pasted)
         self.see(pasted[-1])
@@ -198,12 +240,20 @@ class EditableTreeview(ttk.Treeview):
 
     def delete_selected(self):
         for row_id in self.selection():
-            self.delete(row_id)
+            try:
+                self.delete(row_id)
+            except tk.TclError:
+                pass
         self._renumber()
 
     def _renumber(self):
         for index, row_id in enumerate(self.get_children(), 1):
             self.item(row_id, text=index)
+            if self._is_summary_row(row_id):
+                for child_index, child_id in enumerate(
+                    self.get_children(row_id), 1
+                ):
+                    self.item(child_id, text=f"{index}.{child_index}")
 
     def auto_size_columns(self, max_width=320, min_width=90, padding=26,
                           fill_width=False):
@@ -211,8 +261,14 @@ class EditableTreeview(ttk.Treeview):
         font = tkfont.nametofont("TkDefaultFont")
         heading_font = tkfont.Font(font=PREVIEW_HEADING_FONT)
         for col in self["columns"]:
-            content_w = [font.measure(self.set(row, col))
-                         for row in self.get_children()]
+            content_w = []
+
+            def collect_values(parent_id):
+                for row_id in self.get_children(parent_id):
+                    content_w.append(font.measure(self.set(row_id, col)))
+                    collect_values(row_id)
+
+            collect_values("")
             width = max([heading_font.measure(col)] + content_w) + padding
             width = min(max(min_width, width), max_width)
             self.column(col, width=width, minwidth=min_width,
@@ -225,8 +281,18 @@ class EditableTreeview(ttk.Treeview):
 
     def get_data(self):
         headers = list(self["columns"])
-        rows = [[self.set(row_id, col) for col in headers]
-                for row_id in self.get_children()]
+        rows = []
+
+        def visit(parent_id):
+            for row_id in self.get_children(parent_id):
+                if not parent_id and self._is_summary_row(row_id):
+                    visit(row_id)
+                else:
+                    rows.append([
+                        self.set(row_id, col) for col in headers
+                    ])
+
+        visit("")
         return headers, rows
 
 
@@ -453,6 +519,7 @@ def process_batch(files, select_text, current_model_id):
         file_url = ""
         req_uuid = ""
         parsed_rows = []
+        split_groups = []
         ocr_result_dict = None
 
         try:
@@ -469,7 +536,9 @@ def process_batch(files, select_text, current_model_id):
 
             if ocr_result_dict and ocr_result_dict.get("status") is True:
                 commit_result = ocr_result_dict.get("data", {}).get("commitResult", {})
-                parsed_rows = parse_commit_result(select_text, commit_result, filename)
+                parsed_rows, split_groups = parse_commit_result(
+                    select_text, commit_result, filename
+                )
                 core_data.extend(parsed_rows)
                 if select_text == "GE-发票单":
                     print_log(f"{filename} 处理完成后总明细行数:{len(core_data)}")
@@ -501,6 +570,7 @@ def process_batch(files, select_text, current_model_id):
             "status": status,
             "message": res_msg,
             "rows": parsed_rows,
+            "split_groups": split_groups,
             "req_uuid": req_uuid,
             "log_row": [filename, file_id, file_url, req_uuid, "", status, res_msg, ""],
         })
@@ -563,16 +633,38 @@ def _header_values_from_rows(rows, full_headers, header_fields):
     return values
 
 
-def _detail_rows_from_full_rows(rows, full_headers, detail_fields):
-    """从完整数据行中提取预览明细表所需字段。"""
+def _detail_rows_from_full_rows(rows, split_groups, full_headers, detail_fields):
+    """从完整数据行中提取预览明细字段，并生成拆分汇总分组元数据。"""
     detail_rows = []
     for row in rows or []:
         row_map = dict(zip(full_headers, row))
         detail_rows.append([row_map.get(field, "") for field in detail_fields])
-    return detail_rows
+
+    preview_groups = []
+    for group in split_groups or []:
+        child_indexes = [
+            index for index in group.get("child_indexes", [])
+            if index < len(detail_rows)
+        ]
+        if not child_indexes:
+            continue
+        summary_row = dict(zip(full_headers, group.get("summary_row") or []))
+        summary_values = [
+            summary_row.get(field, "") for field in detail_fields
+        ]
+        kept_fields = {"ITEM NUMBER", "QTY", "LPN Number"}
+        for field_index, field in enumerate(detail_fields):
+            if field not in kept_fields:
+                summary_values[field_index] = ""
+        preview_groups.append({
+            "summary": summary_values,
+            "children": [detail_rows[index] for index in child_indexes],
+            "child_indexes": child_indexes,
+        })
+    return detail_rows, preview_groups
 
 
-def _build_scrolled_preview_tree(parent, columns, rows):
+def _build_scrolled_preview_tree(parent, columns, rows, preview_groups=None):
     """创建带滚动条的明细预览表格，并返回其外层容器与 Treeview。"""
     frame = tk.Frame(parent)
     tree = EditableTreeview(
@@ -585,6 +677,18 @@ def _build_scrolled_preview_tree(parent, columns, rows):
     tree.tag_configure("new_row", background="#FFF3CD")
     tree.tag_configure("zebra_even", background="#FFFFFF")
     tree.tag_configure("zebra_odd", background="#EFF5F9")
+    default_font = tkfont.nametofont("TkDefaultFont")
+    summary_font = (
+        default_font.actual()["family"],
+        default_font.actual()["size"],
+        "bold",
+    )
+    tree.tag_configure(
+        "summary_row",
+        background="#FEF3C7",
+        foreground="#334155",
+        font=summary_font,
+    )
 
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
@@ -596,14 +700,43 @@ def _build_scrolled_preview_tree(parent, columns, rows):
     frame.columnconfigure(0, weight=1)
 
     tree["columns"] = columns
-    tree.column("#0", width=40, minwidth=30, stretch=False, anchor="center")
+    tree.column("#0", width=52, minwidth=40, stretch=False, anchor="center")
     for column in columns:
         tree.heading(column, text=column)
+
+    child_to_group = {}
+    for group in preview_groups or []:
+        for index in group["child_indexes"]:
+            child_to_group[index] = group
+    consumed = set()
+    export_index = 0
     for row_index, row in enumerate(rows):
+        if row_index in consumed:
+            continue
+        group = child_to_group.get(row_index)
+        if group:
+            summary_id = tree.insert(
+                "", tk.END, values=group["summary"],
+                tags=("summary_row",)
+            )
+            tree.item(summary_id, open=True)
+            for child_index in group["child_indexes"]:
+                tag = (
+                    "zebra_even" if export_index % 2 == 0 else "zebra_odd"
+                )
+                tree.insert(
+                    summary_id, tk.END, values=rows[child_index],
+                    tags=(tag,)
+                )
+                export_index += 1
+            consumed.update(group["child_indexes"])
+            continue
+
+        tag = "zebra_even" if export_index % 2 == 0 else "zebra_odd"
         insert_args = {"values": row}
-        tag = "zebra_even" if row_index % 2 == 0 else "zebra_odd"
         insert_args["tags"] = (tag,)
         tree.insert("", tk.END, **insert_args)
+        export_index += 1
     tree._renumber()
     tree.auto_size_columns(fill_width=True)
     return frame, tree
@@ -693,11 +826,12 @@ def _build_file_tab(file_result, headers, header_fields, detail_fields,
 
     tk.Label(tab, text="明细", anchor="w",
              font=("黑体", 12, "bold")).pack(fill=tk.X, padx=8, pady=(0, 2))
-    detail_rows = _detail_rows_from_full_rows(
-        file_result.get("rows") or [], headers, detail_fields
+    detail_rows, preview_groups = _detail_rows_from_full_rows(
+        file_result.get("rows") or [], file_result.get("split_groups") or [],
+        headers, detail_fields
     )
     detail_panel, detail_tree = _build_scrolled_preview_tree(
-        tab, detail_fields, detail_rows
+        tab, detail_fields, detail_rows, preview_groups
     )
     detail_panel.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 4))
 
@@ -832,7 +966,7 @@ def show_preview(select_text, headers, file_results,
     mock_check.config(state=tk.NORMAL)
     btn.config(text="选择文件并开始处理", state=tk.NORMAL)
     abort_btn.config(state=tk.DISABLED)
-    total_rows = sum(len(info["tree"].get_children()) for info in preview_files)
+    total_rows = sum(len(info.get("rows") or []) for info in preview_files)
     pending_count = sum(
         info["status"] == "结果未生成" for info in preview_files
     )
@@ -873,7 +1007,8 @@ def refresh_row_action_state():
     editable = active and active_info is not None
     insert_btn.config(state=tk.NORMAL if editable else tk.DISABLED)
     copy_btn.config(
-        state=tk.NORMAL if editable and active_tree.selection() else tk.DISABLED
+        state=tk.NORMAL if editable and active_tree.has_copyable_selection()
+        else tk.DISABLED
     )
     paste_btn.config(
         state=tk.NORMAL if editable and active_tree.has_clipboard() else tk.DISABLED
@@ -882,7 +1017,7 @@ def refresh_row_action_state():
 
 def refresh_export_state():
     """根据所有页签当前明细行数和操作状态刷新底部按钮。"""
-    has_rows = any(bool(info["tree"].get_children()) for info in preview_files)
+    has_rows = any(bool(info["tree"].get_data()[1]) for info in preview_files)
     active_info = _active_preview_file()
     tree_editable = active_tree is not None and active_info is not None
     refresh_row_action_state()
@@ -986,7 +1121,9 @@ def continue_task_worker(info, select_text, req_uuid, cancel_event):
         if not (ocr_result_dict and ocr_result_dict.get("status") is True):
             raise Exception("OCR返回识别状态异常")
         commit_result = ocr_result_dict.get("data", {}).get("commitResult", {})
-        parsed_rows = parse_commit_result(select_text, commit_result, filename)
+        parsed_rows, split_groups = parse_commit_result(
+            select_text, commit_result, filename
+        )
         updated_log_row = list(info.get("log_row", []))
         if len(updated_log_row) > 6:
             updated_log_row[5] = "成功"
@@ -996,7 +1133,7 @@ def continue_task_worker(info, select_text, req_uuid, cancel_event):
         print_log(f"✅ [{filename}] 继续查询成功")
         ui_message_queue.put((
             "continue_success", info, select_text, "成功", "处理成功",
-            parsed_rows, updated_log_row,
+            parsed_rows, split_groups, updated_log_row,
         ))
     except OCRResultTimeout:
         print_log(f"⏳ [{filename}] 继续查询5分钟仍未生成结果")
@@ -1199,10 +1336,11 @@ def poll_ui_queue():
             finish_abort_state()
         elif kind == "continue_success":
             (info, select_text, status, message, parsed_rows,
-             updated_log_row) = payload
+             split_groups, updated_log_row) = payload
             info["status"] = status
             info["message"] = message
             info["rows"] = parsed_rows
+            info["split_groups"] = split_groups
             info["log_row"] = updated_log_row
             continue_query_active = False
             _apply_continue_success(info, select_text)
