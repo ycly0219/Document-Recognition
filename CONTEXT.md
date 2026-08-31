@@ -37,7 +37,7 @@
 - **固定值（Fixed Value）**：模板导出时按模板写入的常量业务值，例如仓库编号、货主、单位、质量状态；三种单据的订单类型均由单据头下拉选择，不再作为固定值写入。
 - **订单类型（PO Type）**：三种单据共用的单据头必填字段。`GE-ORACLE拣货单` 与 `GE-OSCAR拣货单` 默认空，按“国内出库_FE”等 9 项中文选择，导出为 `GNCK_*` / `GWCK_*`；`GE-发票单` 默认“国外入库”，另支持“国内采购入库”“国内外维修入库”，导出为 `OSI` / `POIN` / `REPAIRIN`。
 - **Flux WMS putPurchaseOrder**：内部 WMS 采购订单接收接口；当前发票功能使用用户提供的 QAS 测试 URL，固定货主 `GEHC` 与仓库 `WH004078`。
-- **接口发送（WMS Send）**：发票页签顶部的发送入口；点击后展示当前页签组装好的只读 JSON 报文，确认发送后在同一窗口追加接口回告。
+- **接口发送（WMS Send）**：发票页签顶部的发送入口；点击后展示当前页签组装好的只读 JSON 报文，确认发送后在同一窗口追加接口回告；打开接口发送二级窗口时最小化程序，恢复主窗口时二级窗口会一起恢复。
 - **putPurchaseOrder 报文（WMS Request Payload）**：由当前发票页签单据头与全部可编辑明细构成；头部仅含 `warehouseId`、`customerId`、`poType`、`docNo`、`udf01`、`udf02`，明细仅含映射字段、按发送顺序生成的 `lineNo` 与 `packUom=EA`，不发送原始汇总行。
 - **接口回告（WMS Response）**：WMS 接口返回的 HTTP 状态及正文；成功时以格式化 JSON 展示，异常时展示发送失败信息并可重试。
 - **udf01（CARRIER）**：putPurchaseOrder 头部扩展字段，存放发票单头 `CARRIER` 值。

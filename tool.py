@@ -1317,6 +1317,41 @@ def close_wms_window():
     wms_confirm_button = None
 
 
+def _release_wms_grab_on_iconify(_event=None):
+    """主窗口最小化时释放二级窗口抓取，避免任务栏恢复被模态状态阻塞。"""
+    if wms_window is not None:
+        try:
+            wms_window.grab_release()
+        except tk.TclError:
+            pass
+
+
+def _reapply_wms_grab():
+    """重新给接口发送二级窗口设置模态抓取。"""
+    if wms_window is None:
+        return
+    try:
+        if wms_window.winfo_exists():
+            wms_window.grab_set()
+    except tk.TclError:
+        pass
+
+
+def _restore_wms_window_on_map(_event=None):
+    """主窗口恢复时同步恢复接口发送二级窗口并重新建立抓取。"""
+    if wms_window is None:
+        return
+    try:
+        if not wms_window.winfo_exists():
+            return
+        wms_window.deiconify()
+        wms_window.lift()
+        wms_window.focus_force()
+        win.after_idle(_reapply_wms_grab)
+    except tk.TclError:
+        pass
+
+
 def open_wms_send_window():
     """打开当前发票页签的只读报文窗口，支持确认发送和回告展示。"""
     global wms_window, wms_window_text, wms_confirm_button, wms_thread
@@ -1553,6 +1588,8 @@ win = tk.Tk()
 win.title("GE单据批量OCR处理工具")
 max_width, max_height = win.maxsize()
 win.geometry(f"{max_width}x{max_height}")
+win.bind("<Unmap>", _release_wms_grab_on_iconify)
+win.bind("<Map>", _restore_wms_window_on_map)
 
 top = tk.Frame(win)
 top.pack(fill=tk.X, padx=10, pady=(10, 0))
