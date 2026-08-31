@@ -57,6 +57,7 @@ def build_put_purchase_order_payload(header_values, detail_rows):
                 row_map.get("Expiration Date")
             ),
             "lotAtt04": _text(row_map.get("LOT Number")),
+            "lotAtt08": "ORACLE",
             "lotAtt08": "GOOD",
             "lotAtt09": _text(row_map.get("Serial Number")),
             "lotAtt11": _text(row_map.get("LPN Number")),
