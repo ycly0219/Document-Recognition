@@ -1,6 +1,6 @@
 """Flux WMS putPurchaseOrder 报文构建与发送。"""
 
-import datetime
+from datetime import datetime
 import json
 
 import requests
