@@ -729,7 +729,7 @@ def _build_scrolled_preview_tree(parent, columns, rows, preview_groups=None):
     frame.columnconfigure(0, weight=1)
 
     tree["columns"] = columns
-    tree.column("#0", width=52, minwidth=40, stretch=False, anchor="center")
+    tree.column("#0", width=60, minwidth=52, stretch=False, anchor="center")
     for column in columns:
         tree.heading(column, text=column)
 
