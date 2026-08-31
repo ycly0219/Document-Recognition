@@ -38,6 +38,7 @@ from parsers import (
 from wms_client import (
     build_put_purchase_order_payload,
     format_wms_response,
+    is_wms_send_success,
     send_put_purchase_order,
 )
 
@@ -1460,7 +1461,12 @@ def wms_send_worker(payload, token):
         response = send_put_purchase_order(payload)
         text = format_wms_response(response)
         print_log(f"WMS接口回告：{text[:200]}")
-        ui_message_queue.put(("wms_send_result", token, text, False))
+        if is_wms_send_success(response):
+            result_text = f"发送成功\n\n{text}"
+            ui_message_queue.put(("wms_send_result", token, result_text, False))
+        else:
+            result_text = f"发送失败：HTTP 状态或 returnFlag 不满足\n\n{text}"
+            ui_message_queue.put(("wms_send_result", token, result_text, True))
     except Exception as e:
         print_log(f"WMS接口发送失败: {e}")
         error_text = f"发送失败：{e}"
@@ -1564,14 +1570,9 @@ def poll_ui_queue():
             if wms_confirm_button is not None:
                 try:
                     if wms_confirm_button.winfo_exists():
-                        if is_error:
-                            wms_confirm_button.config(
-                                state=tk.NORMAL, text="确认发送"
-                            )
-                        else:
-                            wms_confirm_button.config(
-                                state=tk.DISABLED, text="已发送"
-                            )
+                        wms_confirm_button.config(
+                            state=tk.NORMAL, text="重新发送"
+                        )
                 except tk.TclError:
                     pass
             refresh_export_state()

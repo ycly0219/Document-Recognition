@@ -75,6 +75,22 @@ def send_put_purchase_order(payload):
     )
 
 
+def is_wms_send_success(response):
+    """按 HTTP 状态与顶层 returnFlag 判定 putPurchaseOrder 是否发送成功。"""
+    if getattr(response, "status_code", None) != 200:
+        return False
+    try:
+        body = response.json()
+        return_flag = body["Response"]["return"]["returnFlag"]
+    except (ValueError, AttributeError, KeyError, TypeError):
+        return False
+    return return_flag == "1" or (
+        isinstance(return_flag, int)
+        and not isinstance(return_flag, bool)
+        and return_flag == 1
+    )
+
+
 def format_wms_response(response):
     """把接口回告整理为可读文本，优先展示格式化 JSON。"""
     try:
