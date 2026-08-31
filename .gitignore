@@ -9,3 +9,4 @@ CONTEXT.md
 # PyInstaller outputs
 build/
 dist/
+tests/

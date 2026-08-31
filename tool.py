@@ -1,5 +1,6 @@
 """Tkinter 入口模块，负责界面、后台线程与批量处理编排。"""
 
+import json
 import os
 import queue
 import sys
@@ -34,6 +35,11 @@ from parsers import (
     merge_preview_rows,
     parse_commit_result,
 )
+from wms_client import (
+    build_put_purchase_order_payload,
+    format_wms_response,
+    send_put_purchase_order,
+)
 
 
 ui_message_queue = queue.Queue()
@@ -51,6 +57,11 @@ progress_color = "#16A34A"
 session_log_lines = []
 log_window = None
 log_window_text = None
+wms_thread = None
+wms_send_active = False
+wms_window = None
+wms_window_text = None
+wms_confirm_button = None
 
 if sys.platform == "win32":
     PREVIEW_HEADING_FONT = ("Microsoft YaHei UI", 10, "bold")
@@ -388,6 +399,24 @@ def close_log_window():
         log_window.destroy()
     log_window = None
     log_window_text = None
+
+
+def _append_wms_response(token, text, is_error):
+    """把接口回告追加到本次发送对应的二级窗口。"""
+    if wms_window_text is None or id(wms_window_text) != token:
+        return
+    try:
+        if not wms_window_text.winfo_exists():
+            return
+        wms_window_text.config(state=tk.NORMAL)
+        wms_window_text.insert(
+            tk.END,
+            "\n\n===== 接口回告 =====\n" + text + "\n",
+        )
+        wms_window_text.see(tk.END)
+        wms_window_text.config(state=tk.DISABLED)
+    except tk.TclError:
+        pass
 
 
 def poll_log_queue():
@@ -893,6 +922,7 @@ def _background_task_active():
         (worker_thread is not None and worker_thread.is_alive())
         or (export_thread is not None and export_thread.is_alive())
         or (continue_thread is not None and continue_thread.is_alive())
+        or (wms_thread is not None and wms_thread.is_alive())
     )
 
 
@@ -1019,9 +1049,19 @@ def refresh_export_state():
     """根据所有页签当前明细行数和操作状态刷新底部按钮。"""
     has_rows = any(bool(info["tree"].get_data()[1]) for info in preview_files)
     active_info = _active_preview_file()
+    active_has_rows = active_info is not None and bool(
+        active_info["tree"].get_data()[1]
+    )
     tree_editable = active_tree is not None and active_info is not None
     refresh_row_action_state()
     export_btn.config(state=tk.NORMAL if has_rows else tk.DISABLED)
+    wms_send_btn.config(
+        state=tk.NORMAL
+        if active_has_rows
+        and preview_select_text == "GE-发票单"
+        and not _background_task_active() and not wms_send_active
+        else tk.DISABLED
+    )
     add_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
     del_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
 
@@ -1107,6 +1147,7 @@ def continue_current_task():
         daemon=True,
     )
     continue_thread.start()
+    refresh_export_state()
     win.after(100, poll_ui_queue)
 
 
@@ -1216,6 +1257,7 @@ def start_export():
         target=export_worker, args=(export_targets, output_dir), daemon=True
     )
     export_thread.start()
+    refresh_export_state()
     win.after(100, poll_ui_queue)
 
 
@@ -1262,6 +1304,134 @@ def export_worker(export_targets, output_dir):
     ui_message_queue.put(("complete", msg))
 
 
+def close_wms_window():
+    """关闭接口发送二级窗口并清理界面引用。"""
+    global wms_window, wms_window_text, wms_confirm_button
+    if wms_window is not None:
+        try:
+            wms_window.destroy()
+        except tk.TclError:
+            pass
+    wms_window = None
+    wms_window_text = None
+    wms_confirm_button = None
+
+
+def open_wms_send_window():
+    """打开当前发票页签的只读报文窗口，支持确认发送和回告展示。"""
+    global wms_window, wms_window_text, wms_confirm_button, wms_thread
+    global wms_send_active
+    if wms_send_active or _background_task_active():
+        return
+    if preview_select_text != "GE-发票单":
+        return
+    info = _active_preview_file()
+    if info is None:
+        return
+    _, detail_rows = info["tree"].get_data()
+    if not detail_rows:
+        messagebox.showwarning("温馨提示", "当前发票没有可发送的明细数据")
+        return
+    header_values = info.get("header_values", {})
+    if not str(header_values.get("订单类型", "")).strip():
+        messagebox.showwarning("温馨提示", "当前发票请先选择订单类型")
+        return
+    if not str(header_values.get("INVOICE NO", "")).strip():
+        messagebox.showwarning("温馨提示", "当前发票缺少INVOICE NO，无法发送")
+        return
+
+    payload = build_put_purchase_order_payload(header_values, detail_rows)
+    if wms_window is not None:
+        try:
+            if wms_window.winfo_exists():
+                wms_window.lift()
+                return
+        except tk.TclError:
+            pass
+
+    wms_window = tk.Toplevel(win)
+    wms_window.title("接口发送")
+    wms_window.geometry("1000x720")
+    wms_window.minsize(720, 480)
+    wms_window.transient(win)
+    wms_window.grab_set()
+    wms_window.protocol("WM_DELETE_WINDOW", close_wms_window)
+
+    body = tk.Frame(wms_window)
+    body.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+    text_frame = tk.Frame(body)
+    text_frame.pack(fill=tk.BOTH, expand=True)
+    wms_window_text = tk.Text(text_frame, state=tk.DISABLED, wrap=tk.NONE)
+    vsb = ttk.Scrollbar(
+        text_frame, orient="vertical", command=wms_window_text.yview
+    )
+    hsb = ttk.Scrollbar(
+        text_frame, orient="horizontal", command=wms_window_text.xview
+    )
+    wms_window_text.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+    wms_window_text.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
+    hsb.grid(row=1, column=0, sticky="ew")
+    text_frame.rowconfigure(0, weight=1)
+    text_frame.columnconfigure(0, weight=1)
+
+    wms_window_text.config(state=tk.NORMAL)
+    wms_window_text.insert(
+        tk.END, json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+    wms_window_text.config(state=tk.DISABLED)
+
+    button_frame = tk.Frame(body)
+    button_frame.pack(fill=tk.X, pady=(8, 0))
+
+    def start_wms_send():
+        global wms_thread, wms_send_active
+        if wms_send_active or wms_window_text is None:
+            return
+        wms_send_active = True
+        if wms_confirm_button is not None:
+            wms_confirm_button.config(state=tk.DISABLED, text="发送中...")
+        token = id(wms_window_text)
+        wms_thread = threading.Thread(
+            target=wms_send_worker,
+            args=(payload, token),
+            daemon=True,
+        )
+        wms_thread.start()
+        refresh_export_state()
+        win.after(100, poll_ui_queue)
+
+    wms_confirm_button = tk.Button(
+        button_frame, text="确认发送", command=start_wms_send,
+        width=12, bg="#0E7490", fg="#111827", font=BUTTON_FONT,
+        activebackground="#155E75", activeforeground="#111827",
+        disabledforeground=DISABLED_FOREGROUND,
+    )
+    tk.Button(
+        button_frame, text="关闭", command=close_wms_window,
+        width=10, font=BUTTON_FONT,
+        disabledforeground=DISABLED_FOREGROUND,
+    ).pack(side=tk.RIGHT)
+    wms_confirm_button.pack(side=tk.RIGHT, padx=(0, 8))
+
+    wms_window_text.yview_moveto(0)
+
+
+def wms_send_worker(payload, token):
+    """后台发送 putPurchaseOrder 报文，并把回告文本回传主线程。"""
+    print_log("正在发送WMS采购订单报文...")
+    try:
+        response = send_put_purchase_order(payload)
+        text = format_wms_response(response)
+        print_log(f"WMS接口回告：{text[:200]}")
+        ui_message_queue.put(("wms_send_result", token, text, False))
+    except Exception as e:
+        print_log(f"WMS接口发送失败: {e}")
+        error_text = f"发送失败：{e}"
+        ui_message_queue.put(("wms_send_result", token, error_text, True))
+
+
 def draw_progress_canvas():
     """按当前进度百分比重绘进度条。"""
     width = progress_canvas.winfo_width()
@@ -1298,7 +1468,7 @@ def update_progress(done, total):
 
 def poll_ui_queue():
     """主线程轮询处理结果消息，并驱动界面状态更新。"""
-    global continue_query_active
+    global continue_query_active, wms_send_active
     flush_log()
     while True:
         try:
@@ -1352,10 +1522,29 @@ def poll_ui_queue():
             _refresh_file_status_label(info)
             on_preview_tab_changed()
             set_progress_state(100, "处理进度：续查未生成结果", "#D97706")
+        elif kind == "wms_send_result":
+            token, text, is_error = payload
+            _append_wms_response(token, text, is_error)
+            wms_send_active = False
+            if wms_confirm_button is not None:
+                try:
+                    if wms_confirm_button.winfo_exists():
+                        if is_error:
+                            wms_confirm_button.config(
+                                state=tk.NORMAL, text="确认发送"
+                            )
+                        else:
+                            wms_confirm_button.config(
+                                state=tk.DISABLED, text="已发送"
+                            )
+                except tk.TclError:
+                    pass
+            refresh_export_state()
 
-    if (worker_thread is not None and worker_thread.is_alive()) or \
-       (export_thread is not None and export_thread.is_alive()) or \
-       (continue_thread is not None and continue_thread.is_alive()):
+    if any(
+        thread is not None and thread.is_alive()
+        for thread in (worker_thread, export_thread, continue_thread, wms_thread)
+    ):
         win.after(100, poll_ui_queue)
 
 
@@ -1393,6 +1582,14 @@ export_btn = tk.Button(top, text="确认并导出", command=start_export,
                        disabledforeground=DISABLED_FOREGROUND,
                        state=tk.DISABLED)
 export_btn.pack(side=tk.LEFT, padx=(8, 0))
+wms_send_btn = tk.Button(
+    top, text="接口发送", command=open_wms_send_window,
+    width=10, bg="#0E7490", fg="#111827", font=BUTTON_FONT,
+    activebackground="#155E75", activeforeground="#111827",
+    disabledforeground=DISABLED_FOREGROUND,
+    state=tk.DISABLED,
+)
+wms_send_btn.pack(side=tk.LEFT, padx=(8, 0))
 abort_btn = tk.Button(
     top, text="中止", command=abort_processing, width=10,
     bg="#D92D20", fg="#111827", font=BUTTON_FONT,
