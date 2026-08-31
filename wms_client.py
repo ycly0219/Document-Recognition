@@ -1,5 +1,6 @@
 """Flux WMS putPurchaseOrder 报文构建与发送。"""
 
+import datetime
 import json
 
 import requests
@@ -56,8 +57,9 @@ def build_put_purchase_order_payload(header_values, detail_rows):
             "lotAtt02": _normalize_expiration_date(
                 row_map.get("Expiration Date")
             ),
+            "lotAtt03": datetime.now().strftime("%Y-%m-%d"),
             "lotAtt04": _text(row_map.get("LOT Number")),
-            "lotAtt08": "ORACLE",
+            "lotAtt05": "ORACLE",
             "lotAtt08": "GOOD",
             "lotAtt09": _text(row_map.get("Serial Number")),
             "lotAtt11": _text(row_map.get("LPN Number")),
