@@ -322,7 +322,8 @@ def _parse_oscar_picklist(commit_result, filename):
 def _parse_invoice(commit_result, filename):
     """解析 GE-发票单，并按 LPN/Serial 与数量关系拆分明细。
 
-    返回 (明细行列表, 拆分汇总元数据)；明细行仍保持可导出的平铺结构。
+    返回 (明细行列表, 拆分汇总元数据)；明细行仍保持可导出的平铺结构；
+    只拆出 1 条子行时不返回汇总元数据。
     """
     order_type = get_default_order_type_label("GE-发票单")
     invoice_no = commit_result.get("INVOICE NO", {}).get("value", "").strip()
@@ -383,12 +384,14 @@ def _parse_invoice(commit_result, filename):
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
-                split_groups.append({
-                    "source_index": source_index,
-                    "source_qty": raw_qty_str,
-                    "summary_row": split_summary_row,
-                    "child_indexes": child_indexes,
-                })
+                # 单条拆分直接作为普通明细行，不生成汇总分组
+                if len(child_indexes) > 1:
+                    split_groups.append({
+                        "source_index": source_index,
+                        "source_qty": raw_qty_str,
+                        "summary_row": split_summary_row,
+                        "child_indexes": child_indexes,
+                    })
             elif lpn_count == 1 and qty_val > 0:
                 single_lpn = lpn_list[0]
                 print_log(f"Serial为空，匹配LPN规则2：单LPN，QTY={qty_val}，保留一行")
@@ -419,12 +422,14 @@ def _parse_invoice(commit_result, filename):
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
-                split_groups.append({
-                    "source_index": source_index,
-                    "source_qty": raw_qty_str,
-                    "summary_row": split_summary_row,
-                    "child_indexes": child_indexes,
-                })
+                # 单条拆分直接作为普通明细行，不生成汇总分组
+                if len(child_indexes) > 1:
+                    split_groups.append({
+                        "source_index": source_index,
+                        "source_qty": raw_qty_str,
+                        "summary_row": split_summary_row,
+                        "child_indexes": child_indexes,
+                    })
             # 场景2：仅1个LPN、仅1个Serial，按QTY循环复制N行
             elif lpn_count == 1 and serial_count == 1 and qty_val > 0:
                 single_lpn = lpn_list[0]
