@@ -106,6 +106,7 @@ def get_core_headers(select_text):
         # 列头顺序同时用于预览表格与 Excel 导出
         return [
             "订单类型",
+            "运单号",
             "INVOICE NO", "ITEM NUMBER", "QTY", "LPN Number", "Serial Number",
             "LOT Number", "Expiration Date", "COUNTRY OF ORIGIN",
             "SALES ORDER NO", "CUSTOMER PO", "DATE", "DELIVERY", "CARRIER", "HAWB"
@@ -161,7 +162,7 @@ _PREVIEW_LAYOUT = {
     ),
     "GE-发票单": (
         [
-            "订单类型", "INVOICE NO", "DATE", "DELIVERY", "CARRIER", "HAWB",
+            "订单类型", "运单号", "INVOICE NO", "DATE", "DELIVERY", "CARRIER", "HAWB",
         ],
         [
             "ITEM NUMBER", "QTY", "LPN Number", "Serial Number",
@@ -326,6 +327,7 @@ def _parse_invoice(commit_result, filename):
     只拆出 1 条子行时不返回汇总元数据。
     """
     order_type = get_default_order_type_label("GE-发票单")
+    tracking_no = ""
     invoice_no = commit_result.get("INVOICE NO", {}).get("value", "").strip()
     delivery = commit_result.get("DELIVERY", {}).get("value", "").strip()
     doc_date = commit_result.get("DATE", {}).get("value", "").strip()
@@ -353,7 +355,7 @@ def _parse_invoice(commit_result, filename):
         customer_po = item.get("CUSTOMER PO", {}).get("value", "").strip()
         expire = item.get("Expiration Date", {}).get("value", "").strip()
         split_summary_row = [
-            order_type, invoice_no, item_num, raw_qty_str,
+            order_type, tracking_no, invoice_no, item_num, raw_qty_str,
             "原始行汇总", "", lot, expire,
             country_of_origin, sales_order, customer_po,
             doc_date, delivery, carrier, hawb
@@ -380,7 +382,7 @@ def _parse_invoice(commit_result, filename):
                 for single_lpn in lpn_list:
                     child_indexes.append(len(rows))
                     rows.append([
-                        order_type, invoice_no, item_num, "1", single_lpn, "", lot, expire,
+                        order_type, tracking_no, invoice_no, item_num, "1", single_lpn, "", lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -396,14 +398,14 @@ def _parse_invoice(commit_result, filename):
                 single_lpn = lpn_list[0]
                 print_log(f"Serial为空，匹配LPN规则2：单LPN，QTY={qty_val}，保留一行")
                 rows.append([
-                    order_type, invoice_no, item_num, raw_qty_str, single_lpn, "", lot, expire,
+                    order_type, tracking_no, invoice_no, item_num, raw_qty_str, single_lpn, "", lot, expire,
                     country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
             else:
                 # LPN不满足拆分，原样一行
                 rows.append([
-                    order_type, invoice_no, item_num, raw_qty_str, raw_lpn_str, "", lot, expire,
+                    order_type, tracking_no, invoice_no, item_num, raw_qty_str, raw_lpn_str, "", lot, expire,
                     country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
@@ -418,7 +420,7 @@ def _parse_invoice(commit_result, filename):
                     single_serial = serial_list[idx]
                     child_indexes.append(len(rows))
                     rows.append([
-                        order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
+                        order_type, tracking_no, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -436,7 +438,7 @@ def _parse_invoice(commit_result, filename):
                 single_serial = serial_list[0]
                 print_log(f"匹配规则2：单LPN+单Serial，QTY={qty_val}，保留一行")
                 rows.append([
-                    order_type, invoice_no, item_num, raw_qty_str, single_lpn, single_serial, lot, expire,
+                    order_type, tracking_no, invoice_no, item_num, raw_qty_str, single_lpn, single_serial, lot, expire,
                     country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])
@@ -448,7 +450,7 @@ def _parse_invoice(commit_result, filename):
                 for single_serial in serial_list:
                     child_indexes.append(len(rows))
                     rows.append([
-                        order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
+                        order_type, tracking_no, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -466,7 +468,7 @@ def _parse_invoice(commit_result, filename):
                 for single_lpn in lpn_list:
                     child_indexes.append(len(rows))
                     rows.append([
-                        order_type, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
+                        order_type, tracking_no, invoice_no, item_num, "1", single_lpn, single_serial, lot, expire,
                         country_of_origin, sales_order, customer_po,
                         doc_date, delivery, carrier, hawb
                     ])
@@ -479,7 +481,7 @@ def _parse_invoice(commit_result, filename):
             # 其他所有不匹配场景，保留原始一行，LPN/Serial逗号拼接不拆分
             else:
                 rows.append([
-                    order_type, invoice_no, item_num, raw_qty_str, raw_lpn_str, raw_serial_str,
+                    order_type, tracking_no, invoice_no, item_num, raw_qty_str, raw_lpn_str, raw_serial_str,
                     lot, expire, country_of_origin, sales_order, customer_po,
                     doc_date, delivery, carrier, hawb
                 ])

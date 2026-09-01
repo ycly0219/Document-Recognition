@@ -19,7 +19,8 @@
 - `GE-OSCAR拣货单` Excel `C` 列与 `GE-ORACLE拣货单` 一致，写所选订单类型对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
-- `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
+- `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`运单号`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
+- `GE-发票单` 单据头新增 `运单号` 文本框，位于 `订单类型` 右侧，与 `订单类型` 一样红色加粗且必填；OCR 不识别该字段，仅手工填写，也不自动复用 `HAWB`；Excel 导出写入 `G` 列，接口发送时放入 `putPurchaseOrder` 头部 `poReferenceA`
 - `GE-发票单` 单据头新增 `订单类型` 下拉框，默认“国外入库”，可选“国内采购入库”“国内外维修入库”，标题红色加粗且必填；Excel `B` 列按选择写入 `OSI`、`POIN` 或 `REPAIRIN`，不再固定为 `OSI`
 - `GE-发票单` Excel 导出时仅订单类型为“国外入库”（`OSI`）的 `AA` 列固定写 `ORACLE`，`POIN`/`REPAIRIN` 留空
 - 预览页签顶部只显示一组单据头，并按多列可编辑表单展示，不再横向平铺；单据头修改同步到所有明细行，新增明细行自动带当前单据头，Excel 导出仍使用原有完整行映射
@@ -134,7 +135,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 - OCR 最长轮询等待秒数 `OCR_MAX_POLL_SECONDS=300`、轮询间隔 `OCR_RETRY_INTERVAL=5`（原有 `OCR_MAX_RETRY` 保留）
 - 飞书 App 凭据、多维表格记录写入地址
 - 三种单据的 `订单类型` 选项、默认值和导出代码集中在 `parsers.py` 顶部常量中；后续扩展只需在对应模板的选项常量中新增一项
-- Flux WMS `putPurchaseOrder` 接口地址、`apptoken`、`sign`，以及固定货主 `GEHC`、固定仓库 `WH004078`；报文字段映射集中在 `wms_client.py`
+- Flux WMS `putPurchaseOrder` 接口地址、`apptoken`、`sign`，以及固定货主 `GEHC`、固定仓库 `WH004078`；报文字段映射集中在 `wms_client.py`，头部包含 `poReferenceA=运单号`、`udf01=CARRIER`、`udf02=HAWB`
 
 当前项目仅内部使用，采用硬编码方式管理以上配置。所有地址、密钥、模型 ID、字段名和解析规则都写在代码中，不迁移至外部环境变量或者配置文件中。
 
@@ -153,6 +154,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-09-01: [新增] `GE-发票单` 单据头在 `订单类型` 右侧新增必填 `运单号` 文本框，标题红色加粗且仅人工填写；Excel 导出写入 `G` 列，WMS `putPurchaseOrder` 报文头部新增 `poReferenceA`
 - 2026-09-01: [修复] Windows 下接口发送二级窗口 70/30 显示成约 30/70 的问题：窗口实际映射并完成布局后再读取分栏高度设置 sash，避免 `winfo_height()` 在映射前返回 1 导致顶部被固定为 160px
 - 2026-08-31: [调整] 接口发送二级窗口默认分栏比例由组装报文 80%、接口返回内容 20% 调整为 70%、30%
 - 2026-08-31: [修复] 修复接口发送二级窗口默认分栏比例未生效的问题：改用 `PanedWindow.sash_place()` 设置初始分隔位置

@@ -39,13 +39,15 @@
 - **订单类型（PO Type）**：三种单据共用的单据头必填字段。`GE-ORACLE拣货单` 与 `GE-OSCAR拣货单` 默认空，按“国内出库_FE”等 9 项中文选择，导出为 `GNCK_*` / `GWCK_*`；`GE-发票单` 默认“国外入库”，另支持“国内采购入库”“国内外维修入库”，导出为 `OSI` / `POIN` / `REPAIRIN`。
 - **Flux WMS putPurchaseOrder**：内部 WMS 采购订单接收接口；当前发票功能使用用户提供的 QAS 测试 URL，固定货主 `GEHC` 与仓库 `WH004078`。
 - **接口发送（WMS Send）**：发票页签顶部的发送入口；点击后在二级窗口同时展示当前页签组装的只读 JSON 报文与接口返回区，确认发送后返回区展示最新接口回告，并保留重新发送当前报文的入口；二级窗口底部操作按钮固定可见，默认报文区更高；打开接口发送二级窗口时最小化程序，恢复主窗口时二级窗口会一起恢复。
-- **putPurchaseOrder 报文（WMS Request Payload）**：由当前发票页签单据头与全部可编辑明细构成；头部仅含 `warehouseId`、`customerId`、`poType`、`docNo`、`udf01`、`udf02`，明细仅含映射字段、按发送顺序生成的 `lineNo` 与 `packUom=EA`，不发送原始汇总行。
+- **putPurchaseOrder 报文（WMS Request Payload）**：由当前发票页签单据头与全部可编辑明细构成；头部仅含 `warehouseId`、`customerId`、`poType`、`docNo`、`poReferenceA`、`udf01`、`udf02`，明细仅含映射字段、按发送顺序生成的 `lineNo` 与 `packUom=EA`，不发送原始汇总行。
+- **运单号（Waybill No.）**：`GE-发票单` 单据头新增的手工必填字段，位于 `订单类型` 右侧；OCR 不识别，也不复用 `HAWB`，确认并导出时写入 Excel `G` 列，接口发送时放入 WMS 报文头部 `poReferenceA`。
 - **组装报文区（Request Pane）**：接口发送二级窗口上方的只读展示区，固定展示当前页签组装好的 putPurchaseOrder 报文。
 - **接口返回内容区（Response Pane）**：接口发送二级窗口下方的展示区，展示最近一次接口回告；重新发送会覆盖上一次内容。
 - **接口回告（WMS Response）**：WMS 对已发送报文返回的处理结果，包含整体成功/失败状态与可人工查看的明细信息；二级窗口只保留最近一次发送结果，重新发送会覆盖上一次回告。
 - **接口发送成功（WMS Send Success）**：WMS 回告明确确认本次报文处理成功的结果；只有接口成功标志为真时才算发送成功，明细级提示不影响该整体结果。
 - **接口发送失败（WMS Send Failure）**：WMS 未明确确认本次报文处理成功的结果；界面保留重新发送入口，供用户按同一报文再次发送。
 - **重新发送（Resend）**：对当前已展示报文再次执行接口发送的动作；无论上次发送成功或失败均可重复执行，返回区覆盖上一次回告，重复执行不会造成额外副作用。
+- **poReferenceA**：Flux WMS `putPurchaseOrder` 报文头部字段，存放发票单头 `运单号` 值；按用户确认使用该字面字段名，与导出模板中的 `poReference2` 相互独立。
 - **udf01（CARRIER）**：putPurchaseOrder 头部扩展字段，存放发票单头 `CARRIER` 值。
 - **udf02（HAWB）**：putPurchaseOrder 头部扩展字段，存放发票单头 `HAWB` 值。
 - **货物来源（Goods Source）**：GE-ORACLE 拣货单明细行上的来源标识；`GE-发票单` 在订单类型为“国外入库”时同样固定为 `ORACLE`。

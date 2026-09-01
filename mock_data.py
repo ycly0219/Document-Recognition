@@ -52,22 +52,22 @@ def generate_mock_data(select_text):
         default_label = DEFAULT_ORDER_TYPE_BY_TEMPLATE["GE-发票单"]
         # 前两行演示 LPN/Serial 按数量拆分后的效果
         rows = [
-            [default_label, "INV20260821-01", "ITEM-INV-001", "1", "LPN-1", "", "LOT-01",
+            [default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-001", "1", "LPN-1", "", "LOT-01",
              "2026/09/30", "CN", "SO-001", "PO-001",
              "2026/08/21", "DEL-20260821", "FEDEX", "HAWB-001"],
-            [default_label, "INV20260821-01", "ITEM-INV-001", "1", "LPN-2", "", "LOT-01",
+            [default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-001", "1", "LPN-2", "", "LOT-01",
              "2026/09/30", "CN", "SO-001", "PO-001",
              "2026/08/21", "DEL-20260821", "FEDEX", "HAWB-001"],
-            [default_label, "INV20260821-01", "ITEM-INV-001", "1", "LPN-3", "", "LOT-01",
+            [default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-001", "1", "LPN-3", "", "LOT-01",
              "2026/09/30", "CN", "SO-001", "PO-001",
              "2026/08/21", "DEL-20260821", "FEDEX", "HAWB-001"],
-            [default_label, "INV20260821-01", "ITEM-INV-002", "1", "LPN-4", "SN-A", "LOT-02",
+            [default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-002", "1", "LPN-4", "SN-A", "LOT-02",
              "2026/10/31", "US", "SO-002", "PO-002",
              "2026/08/21", "DEL-20260821", "FEDEX", "HAWB-001"],
-            [default_label, "INV20260821-01", "ITEM-INV-002", "1", "LPN-4", "SN-B", "LOT-02",
+            [default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-002", "1", "LPN-4", "SN-B", "LOT-02",
              "2026/10/31", "US", "SO-002", "PO-002",
              "2026/08/21", "DEL-20260821", "FEDEX", "HAWB-001"],
-            [default_label, "INV20260821-02", "ITEM-INV-003", "1", "LPN-9", "SN-C", "LOT-03",
+            [default_label, "WB20260822-001", "INV20260821-02", "ITEM-INV-003", "1", "LPN-9", "SN-C", "LOT-03",
              "2026/11/30", "DE", "SO-003", "PO-003",
              "2026/08/22", "DEL-20260822", "DHL", "HAWB-002"]
         ]
@@ -81,7 +81,7 @@ def generate_mock_data(select_text):
                 "source_index": 0,
                 "source_qty": "3",
                 "summary_row": [
-                    default_label, "INV20260821-01", "ITEM-INV-001", "3",
+                    default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-001", "3",
                     "原始行汇总", "", "LOT-01", "2026/09/30",
                     "CN", "SO-001", "PO-001", "2026/08/21",
                     "DEL-20260821", "FEDEX", "HAWB-001"
@@ -92,7 +92,7 @@ def generate_mock_data(select_text):
                 "source_index": 1,
                 "source_qty": "2",
                 "summary_row": [
-                    default_label, "INV20260821-01", "ITEM-INV-002", "2",
+                    default_label, "WB20260821-001", "INV20260821-01", "ITEM-INV-002", "2",
                     "原始行汇总", "", "LOT-02", "2026/10/31",
                     "US", "SO-002", "PO-002", "2026/08/21",
                     "DEL-20260821", "FEDEX", "HAWB-001"

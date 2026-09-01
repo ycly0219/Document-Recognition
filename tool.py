@@ -802,7 +802,7 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
         cell = tk.Frame(form)
         cell.grid(row=index // columns, column=index % columns,
                   sticky="nsew", padx=4, pady=2)
-        label_fg = "#B42318" if field == "订单类型" else "#111827"
+        label_fg = "#B42318" if field in ("订单类型", "运单号") else "#111827"
         tk.Label(cell, text=field, anchor="w",
                  font=("黑体", 11, "bold"), fg=label_fg).pack(fill=tk.X)
         value_var = tk.StringVar(master=form, value=header_values.get(field, ""))
@@ -1248,6 +1248,21 @@ def start_export():
         )
         return
 
+    missing_tracking_files = []
+    if preview_select_text == "GE-发票单":
+        for info in preview_files:
+            _, detail_rows = info["tree"].get_data()
+            if detail_rows and not str(
+                info.get("header_values", {}).get("运单号", "")
+            ).strip():
+                missing_tracking_files.append(info["filename"])
+    if missing_tracking_files:
+        messagebox.showwarning(
+            "温馨提示",
+            "以下文件请先填写运单号：\n" + "\n".join(missing_tracking_files),
+        )
+        return
+
     export_targets = []
     for info in preview_files:
         _, detail_rows = info["tree"].get_data()
@@ -1390,6 +1405,9 @@ def open_wms_send_window():
     header_values = info.get("header_values", {})
     if not str(header_values.get("订单类型", "")).strip():
         messagebox.showwarning("温馨提示", "当前发票请先选择订单类型")
+        return
+    if not str(header_values.get("运单号", "")).strip():
+        messagebox.showwarning("温馨提示", "当前发票缺少运单号，无法发送")
         return
     if not str(header_values.get("INVOICE NO", "")).strip():
         messagebox.showwarning("温馨提示", "当前发票缺少INVOICE NO，无法发送")

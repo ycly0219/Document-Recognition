@@ -41,6 +41,7 @@ def build_put_purchase_order_payload(header_values, detail_rows):
             "GE-发票单", header_values.get("订单类型", "")
         ),
         "docNo": _text(header_values.get("INVOICE NO", "")),
+        "poReferenceA": _text(header_values.get("运单号", "")),
         "udf01": _text(header_values.get("CARRIER", "")),
         "udf02": _text(header_values.get("HAWB", "")),
     }

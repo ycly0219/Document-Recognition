@@ -69,18 +69,19 @@ _INVOICE_FIXED_VALUES = {
 
 _INVOICE_DYNAMIC_COLUMNS = {
     "B": 0,   # 订单类型 -> OSI/POIN/REPAIRIN
-    "F": 1,   # INVOICE NO
-    "L": 13,  # CARRIER
-    "M": 14,  # HAWB
-    "T": 2,   # ITEM NUMBER
-    "U": 3,   # QTY
-    "X": 7,   # Expiration Date
-    "Z": 6,   # LOT Number
-    "AD": 5,  # Serial Number
-    "AF": 4,  # LPN Number
-    "AJ": 8,  # COUNTRY OF ORIGIN
-    "AK": 9,  # SALES ORDER NO
-    "AL": 10, # CUSTOMER PO
+    "G": 1,   # 运单号 -> poReference2
+    "F": 2,   # INVOICE NO
+    "L": 14,  # CARRIER
+    "M": 15,  # HAWB
+    "T": 3,   # ITEM NUMBER
+    "U": 4,   # QTY
+    "X": 8,   # Expiration Date
+    "Z": 7,   # LOT Number
+    "AD": 6,  # Serial Number
+    "AF": 5,  # LPN Number
+    "AJ": 9,  # COUNTRY OF ORIGIN
+    "AK": 10, # SALES ORDER NO
+    "AL": 11, # CUSTOMER PO
 }
 
 _SALESORDER_FIXED_VALUES = {
