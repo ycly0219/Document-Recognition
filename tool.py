@@ -61,7 +61,8 @@ log_window_text = None
 wms_thread = None
 wms_send_active = False
 wms_window = None
-wms_window_text = None
+wms_window_request_text = None
+wms_window_response_text = None
 wms_confirm_button = None
 
 if sys.platform == "win32":
@@ -402,20 +403,35 @@ def close_log_window():
     log_window_text = None
 
 
-def _append_wms_response(token, text, is_error):
-    """把接口回告追加到本次发送对应的二级窗口。"""
-    if wms_window_text is None or id(wms_window_text) != token:
+def _wms_text_pane(parent, title):
+    """创建接口发送窗口中的只读文本分栏。"""
+    tk.Label(parent, text=title, font=BUTTON_FONT, anchor="w").grid(
+        row=0, column=0, sticky="w", pady=(0, 4)
+    )
+    text = tk.Text(parent, state=tk.DISABLED, wrap=tk.NONE)
+    vsb = ttk.Scrollbar(parent, orient="vertical", command=text.yview)
+    hsb = ttk.Scrollbar(parent, orient="horizontal", command=text.xview)
+    text.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+    text.grid(row=1, column=0, sticky="nsew")
+    vsb.grid(row=1, column=1, sticky="ns")
+    hsb.grid(row=2, column=0, sticky="ew")
+    parent.rowconfigure(1, weight=1)
+    parent.columnconfigure(0, weight=1)
+    return text
+
+
+def _replace_wms_response(token, text):
+    """用最新接口回告覆盖本次发送对应的二级窗口返回区。"""
+    if wms_window_response_text is None or id(wms_window_response_text) != token:
         return
     try:
-        if not wms_window_text.winfo_exists():
+        if not wms_window_response_text.winfo_exists():
             return
-        wms_window_text.config(state=tk.NORMAL)
-        wms_window_text.insert(
-            tk.END,
-            "\n\n===== 接口回告 =====\n" + text + "\n",
-        )
-        wms_window_text.see(tk.END)
-        wms_window_text.config(state=tk.DISABLED)
+        wms_window_response_text.config(state=tk.NORMAL)
+        wms_window_response_text.delete("1.0", tk.END)
+        wms_window_response_text.insert(tk.END, text)
+        wms_window_response_text.yview_moveto(0)
+        wms_window_response_text.config(state=tk.DISABLED)
     except tk.TclError:
         pass
 
@@ -1307,14 +1323,16 @@ def export_worker(export_targets, output_dir):
 
 def close_wms_window():
     """关闭接口发送二级窗口并清理界面引用。"""
-    global wms_window, wms_window_text, wms_confirm_button
+    global wms_window, wms_window_request_text, wms_window_response_text
+    global wms_confirm_button
     if wms_window is not None:
         try:
             wms_window.destroy()
         except tk.TclError:
             pass
     wms_window = None
-    wms_window_text = None
+    wms_window_request_text = None
+    wms_window_response_text = None
     wms_confirm_button = None
 
 
@@ -1355,7 +1373,8 @@ def _restore_wms_window_on_map(_event=None):
 
 def open_wms_send_window():
     """打开当前发票页签的只读报文窗口，支持确认发送和回告展示。"""
-    global wms_window, wms_window_text, wms_confirm_button, wms_thread
+    global wms_window, wms_window_request_text, wms_window_response_text
+    global wms_confirm_button, wms_thread
     global wms_send_active
     if wms_send_active or _background_task_active():
         return
@@ -1396,39 +1415,38 @@ def open_wms_send_window():
     body = tk.Frame(wms_window)
     body.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-    text_frame = tk.Frame(body)
-    text_frame.pack(fill=tk.BOTH, expand=True)
-    wms_window_text = tk.Text(text_frame, state=tk.DISABLED, wrap=tk.NONE)
-    vsb = ttk.Scrollbar(
-        text_frame, orient="vertical", command=wms_window_text.yview
-    )
-    hsb = ttk.Scrollbar(
-        text_frame, orient="horizontal", command=wms_window_text.xview
-    )
-    wms_window_text.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-    wms_window_text.grid(row=0, column=0, sticky="nsew")
-    vsb.grid(row=0, column=1, sticky="ns")
-    hsb.grid(row=1, column=0, sticky="ew")
-    text_frame.rowconfigure(0, weight=1)
-    text_frame.columnconfigure(0, weight=1)
+    button_frame = tk.Frame(body)
+    button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
 
-    wms_window_text.config(state=tk.NORMAL)
-    wms_window_text.insert(
+    paned = tk.PanedWindow(body, orient=tk.VERTICAL, sashwidth=6)
+    paned.pack(fill=tk.BOTH, expand=True)
+
+    request_frame = tk.Frame(paned)
+    response_frame = tk.Frame(paned)
+    paned.add(request_frame, minsize=160)
+    paned.add(response_frame, minsize=120)
+
+    wms_window_request_text = _wms_text_pane(request_frame, "组装报文")
+    wms_window_response_text = _wms_text_pane(response_frame, "接口返回内容")
+
+    wms_window_request_text.config(state=tk.NORMAL)
+    wms_window_request_text.insert(
         tk.END, json.dumps(payload, ensure_ascii=False, indent=2)
     )
-    wms_window_text.config(state=tk.DISABLED)
+    wms_window_request_text.config(state=tk.DISABLED)
 
-    button_frame = tk.Frame(body)
-    button_frame.pack(fill=tk.X, pady=(8, 0))
+    wms_window_response_text.config(state=tk.NORMAL)
+    wms_window_response_text.insert(tk.END, "尚未发送")
+    wms_window_response_text.config(state=tk.DISABLED)
 
     def start_wms_send():
         global wms_thread, wms_send_active
-        if wms_send_active or wms_window_text is None:
+        if wms_send_active or wms_window_response_text is None:
             return
         wms_send_active = True
         if wms_confirm_button is not None:
             wms_confirm_button.config(state=tk.DISABLED, text="发送中...")
-        token = id(wms_window_text)
+        token = id(wms_window_response_text)
         wms_thread = threading.Thread(
             target=wms_send_worker,
             args=(payload, token),
@@ -1451,7 +1469,15 @@ def open_wms_send_window():
     ).pack(side=tk.RIGHT)
     wms_confirm_button.pack(side=tk.RIGHT, padx=(0, 8))
 
-    wms_window_text.yview_moveto(0)
+    wms_window.wait_visibility()
+    paned.update_idletasks()
+    try:
+        paned.sash_place(0, 0, max(160, int(paned.winfo_height() * 0.7)))
+    except tk.TclError:
+        pass
+
+    wms_window_request_text.yview_moveto(0)
+    wms_window_response_text.yview_moveto(0)
 
 
 def wms_send_worker(payload, token):
@@ -1463,14 +1489,14 @@ def wms_send_worker(payload, token):
         print_log(f"WMS接口回告：{text[:200]}")
         if is_wms_send_success(response):
             result_text = f"发送成功\n\n{text}"
-            ui_message_queue.put(("wms_send_result", token, result_text, False))
+            ui_message_queue.put(("wms_send_result", token, result_text))
         else:
             result_text = f"发送失败：HTTP 状态或 returnFlag 不满足\n\n{text}"
-            ui_message_queue.put(("wms_send_result", token, result_text, True))
+            ui_message_queue.put(("wms_send_result", token, result_text))
     except Exception as e:
         print_log(f"WMS接口发送失败: {e}")
         error_text = f"发送失败：{e}"
-        ui_message_queue.put(("wms_send_result", token, error_text, True))
+        ui_message_queue.put(("wms_send_result", token, error_text))
 
 
 def draw_progress_canvas():
@@ -1564,8 +1590,8 @@ def poll_ui_queue():
             on_preview_tab_changed()
             set_progress_state(100, "处理进度：续查未生成结果", "#D97706")
         elif kind == "wms_send_result":
-            token, text, is_error = payload
-            _append_wms_response(token, text, is_error)
+            token, text = payload
+            _replace_wms_response(token, text)
             wms_send_active = False
             if wms_confirm_button is not None:
                 try:
