@@ -17,7 +17,7 @@
 - `GE-ORACLE拣货单` 新增 `SHIP TO NO` 识别字段，预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
 - `GE-OSCAR拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`服务申请号`、`SR编号`、`时效`、`供应商`、`收货人`、`收货地址`、`收货人电话`、`申请说明`、`SSO`、`姓名`、`客户设备id` 顺序；Details 按 `物料编号`、`数量`、`序列号`、`货位`、`仓库`、`状态`、`跟踪号` 顺序
 - `GE-OSCAR拣货单` Excel `C` 列与 `GE-ORACLE拣货单` 一致，写所选订单类型对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`
-- `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空
+- `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空；OCR 姓名写入 R 列（`hedi07`），收货人电话写入 X 列（`hedi15`），不再写 Y 列（`hedi16`）
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`运单号`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
 - `GE-发票单` 单据头新增 `运单号` 文本框，位于 `订单类型` 右侧，与 `订单类型` 一样红色加粗且必填；OCR 不识别该字段，仅手工填写，也不自动复用 `HAWB`；Excel 导出写入 `G` 列，接口发送时放入 `putPurchaseOrder` 头部 `poReferenceA`
@@ -43,6 +43,7 @@
 - `GE-发票单` 拆分汇总栏使用浅琥珀色加粗显示，仅显示 `ITEM NUMBER`（物料编码）、`QTY`（数量）和 `LPN Number=原始行汇总`，其余列留空
 - `GE-发票单` 顶部「确认并导出」与「中止」之间新增「接口发送」按钮；仅当前发票页签有可发送明细时启用，点击后弹出上下分栏只读窗口：上方固定展示组装好的 Flux WMS `putPurchaseOrder` JSON 报文，下方展示接口返回内容（状态 + 格式化 JSON），默认报文区约 70%、返回区约 30%，重新发送后返回内容覆盖上一次回告；接口发送与二级窗口确认发送使用深色文字，二级窗口「确认发送」与「关闭」固定位于底部右侧；打开接口发送二级窗口时最小化程序，从任务栏恢复后主窗口与二级窗口一并显示
 - `GE-发票单` 接口发送仅在 HTTP 200 且回告顶层 `returnFlag` 为 `"1"` 或 `1` 时判定成功，其他情况判为失败；成功和失败后都可在同一只读报文窗口点击「重新发送」，`resultInfo` 明细级错误不改变整体判定
+- 新增 Flux WMS `putOriginalSalesOrder` 字段映射文档：按当前 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 导出的销售订单 Excel 字段约定 WMS 报文映射，详见 `docs/wms_put_original_sales_order_mapping.md`；当前仅维护映射文档，尚未实现发送入口
 - 解析完成后按文件生成多个预览页签，页签只显示文件名，顶部单独展示当前预览文件，页签内显示处理状态
 - 预览表格新增界面序号，新增/删除行后自动重排，序号不写入导出的 Excel
 - 点击「选择文件并开始处理」开始新批次时，会先清空上一批预览内容，再进入处理流程
@@ -151,9 +152,13 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 - 飞书统计为后台异步发送，程序关闭时不会等待；若发送尚未完成，极端情况下本次统计可能缺失。
 - 切换模板规则会直接清空当前预览页签，无确认弹窗；手工填写内容未导出时会丢失，建议后续增加确认或草稿保护。
 - WMS 接口地址为 QAS 测试环境，真实内网联通性需在现场验证。
+- Flux WMS `putOriginalSalesOrder` 当前仅有字段映射文档，未实现接口发送；无来源接口字段不发送，正式联调时应确认 `hedi14/15`、`userDefine`、`dedi` 等字段语义。
 
 ## 更新记录
 
+- 2026-09-02: [新增] 新增 Flux WMS `putOriginalSalesOrder` 字段映射文档，覆盖 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 销售订单导出字段到报文字段的映射；当前未实现发送逻辑
+- 2026-09-02: [变更] `GE-OSCAR拣货单` Excel 导出时将 OCR `收货人电话` 由 Y 列（`hedi16`）改写到 X 列（`hedi15`），模板第 3 行表头同步调整
+- 2026-09-02: [变更] `GE-OSCAR拣货单` Excel 导出时将 OCR `姓名` 由 X 列（`hedi15`）改写到 R 列（`hedi07`），模板第 3 行注释同步调整
 - 2026-09-01: [新增] `GE-发票单` 单据头在 `订单类型` 右侧新增必填 `运单号` 文本框，标题红色加粗且仅人工填写；Excel 导出写入 `G` 列，WMS `putPurchaseOrder` 报文头部新增 `poReferenceA`
 - 2026-09-01: [修复] Windows 下接口发送二级窗口 70/30 显示成约 30/70 的问题：窗口实际映射并完成布局后再读取分栏高度设置 sash，避免 `winfo_height()` 在映射前返回 1 导致顶部被固定为 160px
 - 2026-08-31: [调整] 接口发送二级窗口默认分栏比例由组装报文 80%、接口返回内容 20% 调整为 70%、30%

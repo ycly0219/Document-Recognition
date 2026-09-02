@@ -38,6 +38,8 @@
 - **固定值（Fixed Value）**：模板导出时按模板写入的常量业务值，例如仓库编号、货主、单位、质量状态；三种单据的订单类型均由单据头下拉选择，不再作为固定值写入。
 - **订单类型（PO Type）**：三种单据共用的单据头必填字段。`GE-ORACLE拣货单` 与 `GE-OSCAR拣货单` 默认空，按“国内出库_FE”等 9 项中文选择，导出为 `GNCK_*` / `GWCK_*`；`GE-发票单` 默认“国外入库”，另支持“国内采购入库”“国内外维修入库”，导出为 `OSI` / `POIN` / `REPAIRIN`。
 - **Flux WMS putPurchaseOrder**：内部 WMS 采购订单接收接口；当前发票功能使用用户提供的 QAS 测试 URL，固定货主 `GEHC` 与仓库 `WH004078`。
+- **Flux WMS putOriginalSalesOrder**：WMS 销售订单接收接口；当前按 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 导出的销售订单 Excel 字段约定报文映射，尚未实现发送入口。
+- **销售订单字段映射（Sales Order Field Mapping）**：将销售订单 Excel 模板中的 ORACLE/OSCAR 字段与 Flux WMS `putOriginalSalesOrder` 报文字段对应起来的约定；无可靠来源或固定值的字段不发送。
 - **接口发送（WMS Send）**：发票页签顶部的发送入口；点击后在二级窗口同时展示当前页签组装的只读 JSON 报文与接口返回区，确认发送后返回区展示最新接口回告，并保留重新发送当前报文的入口；二级窗口底部操作按钮固定可见，默认报文区更高；打开接口发送二级窗口时最小化程序，恢复主窗口时二级窗口会一起恢复。
 - **putPurchaseOrder 报文（WMS Request Payload）**：由当前发票页签单据头与全部可编辑明细构成；头部仅含 `warehouseId`、`customerId`、`poType`、`docNo`、`poReferenceA`、`udf01`、`udf02`，明细仅含映射字段、按发送顺序生成的 `lineNo` 与 `packUom=EA`，不发送原始汇总行。
 - **运单号（Waybill No.）**：`GE-发票单` 单据头新增的手工必填字段，位于 `订单类型` 右侧；OCR 不识别，也不复用 `HAWB`，确认并导出时写入 Excel `G` 列，接口发送时放入 WMS 报文头部 `poReferenceA`。
@@ -54,6 +56,8 @@
 - **参考编号3（Reference #3）**：销售订单模板中的第三个参考编号；GE-ORACLE 拣货单场景对应接口的系统编号。
 - **质量状态（Quality Status）**：GE-ORACLE 拣货单物料的质量分类；按仓库子库后缀识别为 `GOOD` 或 `BAD`。
 - **好件（Good Unit）**：GE-OSCAR 拣货单中可正常发货的物料状态；导出质量状态时写入 `GOOD`，非好件状态导出为空。
+- **姓名（Name）**：GE-OSCAR 拣货单 OCR 返回的姓名字段，与收货人相互独立。
+- **收货人电话（Consignee Phone）**：GE-OSCAR 拣货单中的收货方联系电话，属于单据头收货方信息。
 - **LPN**：GE-ORACLE 拣货单明细中的物流容器/托盘编号；在物料明细信息中必有值。
 - **Serial**：GE-ORACLE 拣货单明细中的物料序列号；在物料明细信息中可能缺失。
 - **Lot**：GE-ORACLE 拣货单明细中的物料批号；在物料明细信息中可能缺失。
