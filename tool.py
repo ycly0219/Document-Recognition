@@ -36,9 +36,11 @@ from parsers import (
     parse_commit_result,
 )
 from wms_client import (
+    build_put_original_sales_order_payload,
     build_put_purchase_order_payload,
     format_wms_response,
     is_wms_send_success,
+    send_put_original_sales_order,
     send_put_purchase_order,
 )
 
@@ -1075,7 +1077,9 @@ def refresh_export_state():
     wms_send_btn.config(
         state=tk.NORMAL
         if active_has_rows
-        and preview_select_text == "GE-发票单"
+        and preview_select_text in (
+            "GE-发票单", "GE-ORACLE拣货单", "GE-OSCAR拣货单"
+        )
         and not _background_task_active() and not wms_send_active
         else tk.DISABLED
     )
@@ -1387,33 +1391,55 @@ def _restore_wms_window_on_map(_event=None):
 
 
 def open_wms_send_window():
-    """打开当前发票页签的只读报文窗口，支持确认发送和回告展示。"""
+    """打开当前页签的只读报文窗口，支持确认发送和回告展示。"""
     global wms_window, wms_window_request_text, wms_window_response_text
     global wms_confirm_button, wms_thread
     global wms_send_active
     if wms_send_active or _background_task_active():
         return
-    if preview_select_text != "GE-发票单":
+    if preview_select_text not in (
+        "GE-发票单", "GE-ORACLE拣货单", "GE-OSCAR拣货单"
+    ):
         return
     info = _active_preview_file()
     if info is None:
         return
     _, detail_rows = info["tree"].get_data()
     if not detail_rows:
-        messagebox.showwarning("温馨提示", "当前发票没有可发送的明细数据")
+        messagebox.showwarning("温馨提示", "当前单据没有可发送的明细数据")
         return
     header_values = info.get("header_values", {})
     if not str(header_values.get("订单类型", "")).strip():
-        messagebox.showwarning("温馨提示", "当前发票请先选择订单类型")
+        messagebox.showwarning("温馨提示", "当前单据请先选择订单类型")
         return
-    if not str(header_values.get("运单号", "")).strip():
-        messagebox.showwarning("温馨提示", "当前发票缺少运单号，无法发送")
-        return
-    if not str(header_values.get("INVOICE NO", "")).strip():
-        messagebox.showwarning("温馨提示", "当前发票缺少INVOICE NO，无法发送")
-        return
-
-    payload = build_put_purchase_order_payload(header_values, detail_rows)
+    if preview_select_text == "GE-发票单":
+        if not str(header_values.get("运单号", "")).strip():
+            messagebox.showwarning("温馨提示", "当前发票缺少运单号，无法发送")
+            return
+        if not str(header_values.get("INVOICE NO", "")).strip():
+            messagebox.showwarning("温馨提示", "当前发票缺少INVOICE NO，无法发送")
+            return
+        payload = build_put_purchase_order_payload(header_values, detail_rows)
+        send_func = send_put_purchase_order
+        log_name = "采购订单"
+    elif preview_select_text == "GE-ORACLE拣货单":
+        if not str(header_values.get("Order Number", "")).strip():
+            messagebox.showwarning("温馨提示", "当前ORACLE拣货单缺少Order Number，无法发送")
+            return
+        payload = build_put_original_sales_order_payload(
+            preview_select_text, header_values, detail_rows
+        )
+        send_func = send_put_original_sales_order
+        log_name = "ORACLE销售订单"
+    else:
+        if not str(header_values.get("服务申请号", "")).strip():
+            messagebox.showwarning("温馨提示", "当前OSCAR拣货单缺少服务申请号，无法发送")
+            return
+        payload = build_put_original_sales_order_payload(
+            preview_select_text, header_values, detail_rows
+        )
+        send_func = send_put_original_sales_order
+        log_name = "OSCAR销售订单"
     if wms_window is not None:
         try:
             if wms_window.winfo_exists():
@@ -1467,7 +1493,7 @@ def open_wms_send_window():
         token = id(wms_window_response_text)
         wms_thread = threading.Thread(
             target=wms_send_worker,
-            args=(payload, token),
+            args=(payload, token, send_func, log_name),
             daemon=True,
         )
         wms_thread.start()
@@ -1498,11 +1524,11 @@ def open_wms_send_window():
     wms_window_response_text.yview_moveto(0)
 
 
-def wms_send_worker(payload, token):
-    """后台发送 putPurchaseOrder 报文，并把回告文本回传主线程。"""
-    print_log("正在发送WMS采购订单报文...")
+def wms_send_worker(payload, token, send_func, log_name):
+    """后台发送 WMS 报文，并把回告文本回传主线程。"""
+    print_log(f"正在发送WMS{log_name}报文...")
     try:
-        response = send_put_purchase_order(payload)
+        response = send_func(payload)
         text = format_wms_response(response)
         print_log(f"WMS接口回告：{text[:200]}")
         if is_wms_send_success(response):

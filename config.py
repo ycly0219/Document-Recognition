@@ -29,10 +29,15 @@ MODEL_MAP = {
     "GE-发票单": "logistics_east_ge_invoice_99999_1503"
 }
 
-# ---------------- Flux WMS putPurchaseOrder 对接配置 ----------------
+# ---------------- Flux WMS 接口对接配置 ----------------
 WMS_PUT_PURCHASE_ORDER_URL = (
     "https://sinoewms-qas.i.sinotrans.com/datahubjson/FluxWmsJsonApi_WJC/"
     "?method=putPurchaseOrder&apptoken=0B61B741BB1970A66A63DD653A131D68"
+    "&sign=123&format=json"
+)
+WMS_PUT_ORIGINAL_SALES_ORDER_URL = (
+    "https://sinoewms-qas.i.sinotrans.com/datahubjson/FluxWmsJsonApi_WJC/"
+    "?method=putOriginalSalesOrder&apptoken=0B61B741BB1970A66A63DD653A131D68"
     "&sign=123&format=json"
 )
 WMS_CUSTOMER_ID = "GEHC"
