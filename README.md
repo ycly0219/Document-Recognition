@@ -15,9 +15,10 @@
 - `GE-ORACLE拣货单` Excel 导出时 `Pick Slip Print Date` / `Ordered Date` 支持三字母缩写与完整英文月份名（如 `APR` / `APRIL`）及 2 位/4 位年份转换
 - `GE-ORACLE拣货单` Excel 导出的 `货物来源` 固定写入 `ORACLE`，`参考编号3` 取识别字段 `System Id`，`质量状态` 按 `Pick From Subinv` 后缀规则写入 `GOOD`/`BAD`
 - `GE-ORACLE拣货单` 新增 `SHIP TO NO` 识别字段，预览展示在 `Ship To Address` 前，Excel 写入当前导出模板 `Y` 列（`udf01`），模板字段定义保持不变
-- `GE-OSCAR拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`服务申请号`、`SR编号`、`时效`、`供应商`、`收货人`、`收货地址`、`收货人电话`、`申请说明`、`SSO`、`姓名`、`客户设备id` 顺序；Details 按 `物料编号`、`数量`、`序列号`、`货位`、`仓库`、`状态`、`跟踪号` 顺序
+- `GE-OSCAR拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`服务申请号`、`SR编号`、`时效`、`客户/供应商`、`收货人`、`收货地址`、`收货人电话`、`申请说明`、`SSO`、`姓名`、`客户设备id` 顺序；Details 按 `物料编号`、`数量`、`序列号`、`货位`、`仓库`、`状态`、`跟踪号` 顺序
 - `GE-OSCAR拣货单` Excel `C` 列与 `GE-ORACLE拣货单` 一致，写所选订单类型对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空；OCR 姓名写入 R 列（`hedi07`），收货人电话写入 X 列（`hedi15`），不再写 Y 列（`hedi16`）
+- `GE-OSCAR拣货单` 明细序列号为 `N/A` 或空时，Excel 导出与接口发送均按空处理，预览保留 OCR 原文
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`运单号`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
 - `GE-发票单` 单据头新增 `运单号` 文本框，位于 `订单类型` 右侧，与 `订单类型` 一样红色加粗且必填；OCR 不识别该字段，仅手工填写，也不自动复用 `HAWB`；Excel 导出写入 `G` 列，接口发送时放入 `putPurchaseOrder` 头部 `poReferenceA`
@@ -159,6 +160,8 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-09-04: [变更] `GE-OSCAR拣货单` 预览单据头 `供应商` 标题改为 `客户/供应商`，仅调整预览显示，OCR/Excel/WMS 字段逻辑不变
+- 2026-09-04: [变更] `GE-OSCAR拣货单` 明细 `序列号` 为 `N/A` 或空时，导出 Excel 与 WMS `lotAtt09` 均按空处理，预览保留 OCR 原文
 - 2026-09-02: [新增] 拣货单 `putOriginalSalesOrder` 报文补充明细 `dedi01/02/03` 映射，ORACLE/OSCAR 头部固定 `consigneeName=虚拟收货人`
 - 2026-09-02: [新增] 完成 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 的 Flux WMS `putOriginalSalesOrder` 报文构建、HTTP 发送与回告展示；顶部「接口发送」覆盖三种单据，`tests/test_wms_client.py` 新增 ORACLE/OSCAR 报文测试
 - 2026-09-02: [新增] 新增 Flux WMS `putOriginalSalesOrder` 字段映射文档，覆盖 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 销售订单导出字段到报文字段的映射；同日完成发送入口实现

@@ -14,6 +14,7 @@ from config import (
 from excel_export import (
     _normalize_expiration_date,
     _normalize_oracle_datetime,
+    _normalize_oscar_serial,
     _oracle_quality_status,
 )
 from parsers import get_order_type_value
@@ -195,7 +196,11 @@ def _build_oscar_put_original_sales_order_payload(header_values, detail_rows):
         _optional_item(detail, "lotAtt07", row_map.get("仓库"))
         if _text(row_map.get("状态")) == "好件":
             detail["lotAtt08"] = "GOOD"
-        _optional_item(detail, "lotAtt09", row_map.get("序列号"))
+        _optional_item(
+            detail,
+            "lotAtt09",
+            _normalize_oscar_serial(row_map.get("序列号")),
+        )
         _optional_item(detail, "dedi02", row_map.get("跟踪号"))
         _optional_item(detail, "dedi03", row_map.get("货位"))
         details.append(detail)

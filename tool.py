@@ -74,6 +74,9 @@ else:
 MAX_BATCH_FILES = 5
 MANUAL_STATUS = "人工填写"
 MANUAL_FILENAME = "空白单据"
+OSCAR_HEADER_DISPLAY_LABELS = {
+    "供应商": "客户/供应商",
+}
 
 
 class EditableTreeview(ttk.Treeview):
@@ -805,7 +808,8 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
         cell.grid(row=index // columns, column=index % columns,
                   sticky="nsew", padx=4, pady=2)
         label_fg = "#B42318" if field in ("订单类型", "运单号") else "#111827"
-        tk.Label(cell, text=field, anchor="w",
+        display_label = OSCAR_HEADER_DISPLAY_LABELS.get(field, field)
+        tk.Label(cell, text=display_label, anchor="w",
                  font=("黑体", 11, "bold"), fg=label_fg).pack(fill=tk.X)
         value_var = tk.StringVar(master=form, value=header_values.get(field, ""))
         if field == "订单类型":

@@ -65,7 +65,7 @@ PRICE              = "0"
 | `lotAtt05` | 固定 `ORACLE`（AJ） | 固定 `OSCAR`（AN） | 货物来源 |
 | `lotAtt07` | `Org`（AK） | `仓库`（AO） | 原值 |
 | `lotAtt08` | `Pick From Subinv`（AL） | 状态（AP） | ORACLE 按 `GD/BAD` 后缀转 `GOOD/BAD`；OSCAR `好件` 转 `GOOD`，其余留空 |
-| `lotAtt09` | `Serial`（AM） | `序列号`（AQ） | 原值 |
+| `lotAtt09` | `Serial`（AM） | `序列号`（AQ） | 原值；空或 `N/A` 归一化为空并省略 |
 | `lotAtt11` | `LPN`（AN） | 无来源省略 | 原值 |
 | `dedi01` | `Task Id`（AW） | 无来源省略 | 原值 |
 | `dedi02` | 无来源省略 | `跟踪号`（BB） | 原值 |
@@ -86,4 +86,5 @@ PRICE              = "0"
 - `订单类型` 中文标签应先转换为当前模板使用的 `GNCK_*` / `GWCK_*` 代码，再写入 `orderType`。
 - ORACLE 日期转换可复用导出逻辑中的三字母/完整月份、2 位/4 位年份转换规则。
 - `lotAtt08` 的 ORACLE 和 OSCAR 转换规则不同，不能使用同一个固定值。
+- OSCAR `序列号` 为空或 `N/A`（不区分大小写）时按空处理，Excel `AQ` 不写入、接口 `lotAtt09` 省略；预览仍保留 OCR 原文。
 - 报文仅包含有可靠来源或固定值的字段；未映射字段不拼接进 JSON。

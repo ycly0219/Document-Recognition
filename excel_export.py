@@ -260,6 +260,16 @@ def _oracle_quality_status(pick_from_subinv):
     return ""
 
 
+def _normalize_oscar_serial(value):
+    """把 OSCAR 序列号的空值/N/A 归一化为导出与发送空值。"""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text or text.upper() == "N/A":
+        return ""
+    return text
+
+
 def _export_oracle_salesorder_template(core_data, output_file):
     """按 DOC_SALESORDER_HEADER 的销售订单表头模板导出售后单数据。"""
     wb = load_workbook(SALESORDER_TEMPLATE_PATH)
@@ -314,6 +324,8 @@ def _export_oscar_salesorder_template(core_data, output_file):
                 value = get_order_type_value("GE-OSCAR拣货单", value)
             elif col_name == "AP":
                 value = "GOOD" if str(value).strip() == "好件" else ""
+            elif col_name == "AQ":
+                value = _normalize_oscar_serial(value)
             ws[f"{col_name}{row_index}"] = value
 
     wb.save(output_file)
