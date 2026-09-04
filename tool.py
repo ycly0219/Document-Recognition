@@ -812,24 +812,53 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
         tk.Label(cell, text=display_label, anchor="w",
                  font=("黑体", 11, "bold"), fg=label_fg).pack(fill=tk.X)
         value_var = tk.StringVar(master=form, value=header_values.get(field, ""))
-        if field == "订单类型":
-            order_type_labels = get_order_type_labels(select_text)
-            default_label = get_default_order_type_label(select_text)
-            if default_label and value_var.get() not in order_type_labels:
-                value_var.set(default_label)
-            ttk.Combobox(
-                cell, textvariable=value_var, state="readonly",
-                values=order_type_labels,
-            ).pack(fill=tk.X)
+        if (
+            (select_text == "GE-OSCAR拣货单" and field == "收货地址")
+            or (select_text == "GE-ORACLE拣货单" and field == "Ship To Address")
+        ):
+            text_widget = tk.Text(
+                cell,
+                height=2,
+                wrap=tk.WORD,
+                relief=tk.SUNKEN,
+                bd=1,
+            )
+            text_widget.insert("1.0", value_var.get())
+            text_widget.pack(fill=tk.X)
+
+            def _sync_header_text(
+                _event=None,
+                text_widget=text_widget,
+                current_field=field,
+                current_result=file_result,
+            ):
+                _update_preview_header(
+                    current_result,
+                    current_field,
+                    text_widget.get("1.0", "end-1c"),
+                )
+
+            text_widget.bind("<KeyRelease>", _sync_header_text)
+            text_widget.bind("<FocusOut>", _sync_header_text)
         else:
-            tk.Entry(cell, textvariable=value_var).pack(fill=tk.X)
-        value_var.trace_add(
-            "write",
-            lambda *_args, field=field, value_var=value_var,
-            file_result=file_result: _update_preview_header(
-                file_result, field, value_var.get()
-            ),
-        )
+            if field == "订单类型":
+                order_type_labels = get_order_type_labels(select_text)
+                default_label = get_default_order_type_label(select_text)
+                if default_label and value_var.get() not in order_type_labels:
+                    value_var.set(default_label)
+                ttk.Combobox(
+                    cell, textvariable=value_var, state="readonly",
+                    values=order_type_labels,
+                ).pack(fill=tk.X)
+            else:
+                tk.Entry(cell, textvariable=value_var).pack(fill=tk.X)
+            value_var.trace_add(
+                "write",
+                lambda *_args, field=field, value_var=value_var,
+                file_result=file_result: _update_preview_header(
+                    file_result, field, value_var.get()
+                ),
+            )
     for col_index in range(columns):
         form.columnconfigure(col_index, weight=1, uniform="header")
     return form
