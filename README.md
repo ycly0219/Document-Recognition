@@ -9,7 +9,7 @@
 - 点击「确认并导出」前会校验所有有明细文件的 `订单类型`：缺失时提示具体文件名并停止，不再继续弹出导出目录
 - `GE-ORACLE拣货单` 原始 `Item Details` 不再导出，改为提取 `LPN`、`Serial`、`Lot`、`COO` 四列；`LPN` 必有值，其余缺失时为空
 - `GE-ORACLE拣货单` 的 `Item Details` 遇到 `UN Number:` 后忽略之后内容，不再继续解析，也不导出 UN Number
-- `GE-ORACLE拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`Order Number`、`OrderType`、`Pick Slip Print Date`、`Shipment Priority`、`Service Level`、`FE SSO`、`FE Name`、`SHIP TO NO`、`Ship To Address`、`Shipping Instruction`、`Special Instruction`、`Customer Name`、`Customer Number`、`System Id`、`Pick From Subinv`、`Customer PO`、`Delivery`、`Ordered Date`、`Ship Method` 顺序；Details 按 `Task Id`、`Item Number`、`Qty`、`LPN`、`Serial`、`Lot`、`COO`、`Pick From Locator`、`Org` 顺序
+- `GE-ORACLE拣货单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`Order Number`、`OrderType`、`Shipment Priority`、`Service Level`、`FE SSO`、`FE Name`、`SHIP TO NO`、`Ship To Address`、`Shipping Instruction`、`Special Instruction`、`Customer Name`、`Customer Number`、`System Id`、`Pick From Subinv`、`Customer PO`、`Delivery`、`Pick Slip Print Date` 顺序；其中 `Ordered Date`、`Ship Method` 仅从 OCR 完整行保留，预览不展示且不可编辑，Excel 导出和 WMS 报文仍正常使用；Details 按 `Task Id`、`Item Number`、`Qty`、`LPN`、`Serial`、`Lot`、`COO`、`Pick From Locator`、`Org` 顺序
 - `GE-ORACLE拣货单` Excel `C` 列改为写所选 `订单类型` 对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`；原 OCR `OrderType` 字段保留并继续写 Excel `L` 列
 - `GE-ORACLE拣货单` Excel 导出按 `DOC_SALESORDER_HEADER.xlsx` 的销售订单表头模板生成，仅保留模板 Sheet，按模板第 3 行映射写入固定值与识别字段
 - `GE-ORACLE拣货单` Excel 导出时 `Pick Slip Print Date` / `Ordered Date` 支持三字母缩写与完整英文月份名（如 `APR` / `APRIL`）及 2 位/4 位年份转换
@@ -26,7 +26,7 @@
 - `GE-发票单` 单据头新增 `订单类型` 下拉框，默认“国外入库”，可选“国内采购入库”“国内外维修入库”，标题红色加粗且必填；Excel `B` 列按选择写入 `OSI`、`POIN` 或 `REPAIRIN`，不再固定为 `OSI`
 - `GE-发票单` Excel 导出时仅订单类型为“国外入库”（`OSI`）的 `AA` 列固定写 `ORACLE`，`POIN`/`REPAIRIN` 留空
 - 预览页签顶部只显示一组单据头，并按多列可编辑表单展示，不再横向平铺；单据头修改同步到所有明细行，新增明细行自动带当前单据头，Excel 导出仍使用原有完整行映射
-- 单据头预览区使用多列 `Label + Entry/Text` 表单，其中 `GE-OSCAR拣货单` 预览单据头 `收货地址`、`GE-ORACLE拣货单` 预览单据头 `Ship To Address` 均为两行可换行文本；字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
+- 单据头预览区使用多列 `Label + Entry/Text` 表单，其中 `GE-OSCAR拣货单` 预览单据头 `收货地址`、`GE-ORACLE拣货单` 预览单据头 `Ship To Address` 均为两行可换行文本，并跨两列展示（地址所在行 4 个字段，其他行仍为 5 个字段）；字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
 - 底部操作按钮行保持固定可见；预览页签内容不再参与窗口尺寸计算，表格超高/超宽时通过内部滚动条查看
 - `GE-发票单` Excel 导出按 `DOC_PO_HEADER.xlsx` 的采购订单表头模板生成，固定值与发票字段映射自动写入
 - `GE-发票单` 仅一个 LPN（或仅一个 LPN+Serial）时保留一行并写原始 QTY，不再按 QTY 重复生成多行
@@ -162,6 +162,8 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 ## 更新记录
 
 - 2026-09-05: [变更] `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 解析 OCR 地址时将连续空白（含换行、全角空格）折为单个空格并去除首尾空白，预览/Excel/WMS 均使用清洗后地址
+- 2026-09-05: [变更] `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 预览单据头地址跨两列展示，所在行调整为 4 个字段，其他行保持 5 个字段，导出/WMS 字段逻辑不变
+- 2026-09-05: [变更] `GE-ORACLE拣货单` 预览单据头隐藏 `Ordered Date` / `Ship Method`，`Pick Slip Print Date` 移至预览最后，`SHIP TO NO` 与 `Ship To Address` 同行显示；隐藏字段 OCR 值仍继续用于 Excel 导出和 WMS 报文，预览不可编辑
 - 2026-09-04: [变更] `GE-ORACLE拣货单` 预览单据头 `Ship To Address` 改为两行可换行文本，便于查看长地址，导出/WMS 字段逻辑不变
 - 2026-09-04: [变更] `GE-OSCAR拣货单` 预览单据头 `收货地址` 改为两行可换行文本，便于查看长地址，导出/WMS 字段逻辑不变
 - 2026-09-04: [变更] `GE-OSCAR拣货单` 预览单据头 `供应商` 标题改为 `客户/供应商`，仅调整预览显示，OCR/Excel/WMS 字段逻辑不变

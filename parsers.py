@@ -125,7 +125,6 @@ _PREVIEW_LAYOUT = {
             "订单类型",
             "Order Number",
             "OrderType",
-            "Pick Slip Print Date",
             "Shipment Priority",
             "Service Level",
             "FE SSO",
@@ -140,8 +139,7 @@ _PREVIEW_LAYOUT = {
             "Pick From Subinv",
             "Customer PO",
             "Delivery",
-            "Ordered Date",
-            "Ship Method",
+            "Pick Slip Print Date",
         ],
         [
             "Task Id",
@@ -178,11 +176,21 @@ _PREVIEW_LAYOUT = {
 }
 
 
+_PREVIEW_HIDDEN_FIELDS = {
+    "GE-ORACLE拣货单": ("Ordered Date", "Ship Method"),
+}
+
+
 def get_preview_layout(select_text):
     """返回预览用的 Header 字段顺序与 Details 字段顺序。"""
     if select_text not in _PREVIEW_LAYOUT:
         raise ValueError(f"未知模板: {select_text}")
     return _PREVIEW_LAYOUT[select_text]
+
+
+def get_preview_hidden_fields(select_text):
+    """返回预览不展示、但导出与接口仍需保留的 Header 字段。"""
+    return _PREVIEW_HIDDEN_FIELDS.get(select_text, ())
 
 
 def merge_preview_rows(select_text, header_values, detail_rows):

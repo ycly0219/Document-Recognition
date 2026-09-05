@@ -31,6 +31,7 @@ from parsers import (
     get_core_headers,
     get_default_order_type_label,
     get_order_type_labels,
+    get_preview_hidden_fields,
     get_preview_layout,
     merge_preview_rows,
     parse_commit_result,
@@ -673,12 +674,13 @@ def _short_tab_label(filename, max_len=22):
     return name[:max_len - 1] + "…"
 
 
-def _header_values_from_rows(rows, full_headers, header_fields):
-    """从头组单据行中提取每个 Header 字段的首个非空值。"""
-    values = {field: "" for field in header_fields}
+def _header_values_from_rows(rows, full_headers, header_fields, hidden_fields=()):
+    """从头组单据行中提取可见与隐藏 Header 字段的首个非空值。"""
+    fields = list(header_fields) + list(hidden_fields)
+    values = {field: "" for field in fields}
     for row in rows or []:
         row_map = dict(zip(full_headers, row))
-        for field in header_fields:
+        for field in fields:
             if not values[field] and str(row_map.get(field, "")).strip():
                 values[field] = row_map[field]
     return values
@@ -803,9 +805,16 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
     """把单据头字段渲染为多列表单，编辑时直接同步到导出数据。"""
     form = tk.Frame(parent)
     columns = 5 if len(header_fields) >= 5 else max(1, len(header_fields))
+    wide_fields = set()
+    if select_text == "GE-OSCAR拣货单":
+        wide_fields.add("收货地址")
+    elif select_text == "GE-ORACLE拣货单":
+        wide_fields.add("Ship To Address")
+    placements = _build_header_placements(header_fields, wide_fields, columns)
     for index, field in enumerate(header_fields):
+        row, column, span = placements[index]
         cell = tk.Frame(form)
-        cell.grid(row=index // columns, column=index % columns,
+        cell.grid(row=row, column=column, columnspan=span,
                   sticky="nsew", padx=4, pady=2)
         label_fg = "#B42318" if field in ("订单类型", "运单号") else "#111827"
         display_label = OSCAR_HEADER_DISPLAY_LABELS.get(field, field)
@@ -864,6 +873,21 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
     return form
 
 
+def _build_header_placements(fields, wide_fields, columns=5):
+    """计算多列表单中每个字段的跨列位置。"""
+    placements = []
+    row = 0
+    col = 0
+    for field in fields:
+        span = 2 if field in wide_fields else 1
+        if col + span > columns:
+            row += 1
+            col = 0
+        placements.append((row, col, span))
+        col += span
+    return placements
+
+
 def _build_file_tab(file_result, headers, header_fields, detail_fields,
                     select_text, add_tab=True):
     """为单个文件创建“单据头表单 + 明细”预览页签，并返回明细表格。"""
@@ -885,8 +909,9 @@ def _build_file_tab(file_result, headers, header_fields, detail_fields,
     status_label.pack(fill=tk.X, padx=8, pady=(0, 4))
 
     file_result["status_label"] = status_label
+    hidden_fields = get_preview_hidden_fields(select_text)
     header_values = _header_values_from_rows(
-        file_result.get("rows") or [], headers, header_fields
+        file_result.get("rows") or [], headers, header_fields, hidden_fields
     )
     if not header_values.get("订单类型"):
         prior_order_type = file_result.get("header_values", {}).get("订单类型", "")
