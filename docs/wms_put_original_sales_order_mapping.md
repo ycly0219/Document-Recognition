@@ -35,7 +35,7 @@ PRICE              = "0"
 | `orderTime` | `Pick Slip Print Date`（D） | 无来源（组装报文时取当前时间） | ORACLE 转 `YYYY-MM-DD HH:MM:SS`；OSCAR 取组装报文时的当前时间 |
 | `consigneeId` | 固定 `CONSIGNEEID`（V） | 固定 `CONSIGNEEID`（Z） | `CONSIGNEE_ID` |
 | `consigneeName` | 固定 `虚拟收货人` | 固定 `虚拟收货人` | `CONSIGNEE_NAME` |
-| `consigneeAddress1` | `Ship To Address`（W） | `收货地址`（AA） | 原值 |
+| `consigneeAddress1` | `Ship To Address`（W） | `收货地址`（AA） | 解析时把连续空白折为单个空格、去除首尾空白 |
 | `notes` | 当前无来源省略 | `申请说明`（AB） | 原值 |
 | `hedi01` | `OrderType`（L） | `客户设备id`（I） | 与 `soReferenceB` 的 OSCAR 来源一致 |
 | `hedi02` | `Ordered Date`（M） | 无来源省略 | 转 `YYYY-MM-DD` |

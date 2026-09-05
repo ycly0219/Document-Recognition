@@ -59,6 +59,11 @@ _ITEM_DETAIL_PATTERN = re.compile(
 )
 
 
+def _normalize_address(value):
+    """把 OCR 地址中的连续空白折为一个空格，并去除首尾空白。"""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
 def get_core_headers(select_text):
     """返回各单据模板对应的预览/导出列结构。"""
     if select_text == "GE-ORACLE拣货单":
@@ -216,7 +221,9 @@ def _parse_oracle_picklist(commit_result, filename):
     pick_from_subinv = commit_result.get("Pick From Subinv", {}).get("value", "").strip()
     customer_po = commit_result.get("Customer PO", {}).get("value", "").strip()
 
-    ship_addr = commit_result.get("Ship To Address", {}).get("value", "").strip()
+    ship_addr = _normalize_address(
+        commit_result.get("Ship To Address", {}).get("value", "")
+    )
     ship_to_no = commit_result.get("SHIP TO NO", {}).get("value", "").strip()
     email = commit_result.get("Email", {}).get("value", "").strip()
     delivery = commit_result.get("Delivery", {}).get("value", "").strip()
@@ -284,7 +291,9 @@ def _parse_oscar_picklist(commit_result, filename):
     sr_no = commit_result.get("SR编号", {}).get("value", "").strip()
     supplier = commit_result.get("供应商", {}).get("value", "").strip()
     sso = commit_result.get("SSO", {}).get("value", "").strip()
-    ship_addr = commit_result.get("收货地址", {}).get("value", "").strip()
+    ship_addr = _normalize_address(
+        commit_result.get("收货地址", {}).get("value", "")
+    )
     lead_time = commit_result.get("时效", {}).get("value", "").strip()
     consignee_tel = commit_result.get("收货人电话", {}).get("value", "").strip()
     apply_note = commit_result.get("申请说明", {}).get("value", "").strip()

@@ -19,6 +19,7 @@
 - `GE-OSCAR拣货单` Excel `C` 列与 `GE-ORACLE拣货单` 一致，写所选订单类型对应的 `GNCK_*`/`GWCK_*` 代码，不再固定写 `JYCK`
 - `GE-OSCAR拣货单` Excel 导出按 `DOC_SALESORDER_HEADER_1.xlsx` 的销售订单表头模板生成，状态为“好件”时写入 `GOOD`，其余状态留空；OCR 姓名写入 R 列（`hedi07`），收货人电话写入 X 列（`hedi15`），不再写 Y 列（`hedi16`）
 - `GE-OSCAR拣货单` 明细序列号为 `N/A` 或空时，Excel 导出与接口发送均按空处理，预览保留 OCR 原文
+- `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 解析 OCR 收货地址时将连续空白（含换行）折为单个空格并去除首尾空白；预览、Excel 导出和 WMS 报文均使用清洗后的地址，人工修改后的地址保留原样
 - `GE-发票单` 支持新增 `COUNTRY OF ORIGIN` 字段，识别后同步展示在预览表格并写入 Excel
 - `GE-发票单` 预览拆分为“单据头 + 明细”：Header 按 `订单类型`、`运单号`、`INVOICE NO`、`DATE`、`DELIVERY`、`CARRIER`、`HAWB` 顺序；Details 按 `ITEM NUMBER`、`QTY`、`LPN Number`、`Serial Number`、`LOT Number`、`Expiration Date`、`COUNTRY OF ORIGIN`、`SALES ORDER NO`、`CUSTOMER PO` 顺序
 - `GE-发票单` 单据头新增 `运单号` 文本框，位于 `订单类型` 右侧，与 `订单类型` 一样红色加粗且必填；OCR 不识别该字段，仅手工填写，也不自动复用 `HAWB`；Excel 导出写入 `G` 列，接口发送时放入 `putPurchaseOrder` 头部 `poReferenceA`
@@ -160,6 +161,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-09-05: [变更] `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 解析 OCR 地址时将连续空白（含换行、全角空格）折为单个空格并去除首尾空白，预览/Excel/WMS 均使用清洗后地址
 - 2026-09-04: [变更] `GE-ORACLE拣货单` 预览单据头 `Ship To Address` 改为两行可换行文本，便于查看长地址，导出/WMS 字段逻辑不变
 - 2026-09-04: [变更] `GE-OSCAR拣货单` 预览单据头 `收货地址` 改为两行可换行文本，便于查看长地址，导出/WMS 字段逻辑不变
 - 2026-09-04: [变更] `GE-OSCAR拣货单` 预览单据头 `供应商` 标题改为 `客户/供应商`，仅调整预览显示，OCR/Excel/WMS 字段逻辑不变
