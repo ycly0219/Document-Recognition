@@ -26,7 +26,7 @@
 - `GE-发票单` 单据头新增 `订单类型` 下拉框，默认“国外入库”，可选“国内采购入库”“国内外维修入库”，标题红色加粗且必填；Excel `B` 列按选择写入 `OSI`、`POIN` 或 `REPAIRIN`，不再固定为 `OSI`
 - `GE-发票单` Excel 导出时仅订单类型为“国外入库”（`OSI`）的 `AA` 列固定写 `ORACLE`，`POIN`/`REPAIRIN` 留空
 - 预览页签顶部只显示一组单据头，并按多列可编辑表单展示，不再横向平铺；单据头修改同步到所有明细行，新增明细行自动带当前单据头，Excel 导出仍使用原有完整行映射
-- 单据头预览区使用多列 `Label + Entry/Text` 表单，其中 `GE-OSCAR拣货单` 预览单据头 `收货地址`、`GE-ORACLE拣货单` 预览单据头 `Ship To Address` 均为两行可换行文本，并跨两列展示（地址所在行 4 个字段，其他行仍为 5 个字段）；字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
+- 单据头预览区使用多列 `Label + Entry/Text` 表单，其中 `GE-OSCAR拣货单` 预览单据头 `收货地址`、`GE-ORACLE拣货单` 预览单据头 `Ship To Address` 均为两行可换行文本并跨两列展示，`GE-ORACLE拣货单` 预览单据头 `Shipping Instruction` 跨两列展示但保持单行输入框；跨两列字段所在行 4 个字段，其他行仍为 5 个字段；字段标签字号已调大一号；明细表格在预览区宽度有空余时自动撑满列宽，字段过多时仍保留横向滚动
 - 底部操作按钮行保持固定可见；预览页签内容不再参与窗口尺寸计算，表格超高/超宽时通过内部滚动条查看
 - `GE-发票单` Excel 导出按 `DOC_PO_HEADER.xlsx` 的采购订单表头模板生成，固定值与发票字段映射自动写入
 - `GE-发票单` 仅一个 LPN（或仅一个 LPN+Serial）时保留一行并写原始 QTY，不再按 QTY 重复生成多行
@@ -161,6 +161,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-09-05: [变更] `GE-ORACLE拣货单` 预览单据头 `Shipping Instruction` 跨两列展示但保持单行输入框，`Special Instruction` 及导出/WMS 逻辑不变
 - 2026-09-05: [变更] `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 解析 OCR 地址时将连续空白（含换行、全角空格）折为单个空格并去除首尾空白，预览/Excel/WMS 均使用清洗后地址
 - 2026-09-05: [变更] `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 预览单据头地址跨两列展示，所在行调整为 4 个字段，其他行保持 5 个字段，导出/WMS 字段逻辑不变
 - 2026-09-05: [变更] `GE-ORACLE拣货单` 预览单据头隐藏 `Ordered Date` / `Ship Method`，`Pick Slip Print Date` 移至预览最后，`SHIP TO NO` 与 `Ship To Address` 同行显示；隐藏字段 OCR 值仍继续用于 Excel 导出和 WMS 报文，预览不可编辑

@@ -809,7 +809,7 @@ def _build_header_form(parent, file_result, header_fields, header_values, select
     if select_text == "GE-OSCAR拣货单":
         wide_fields.add("收货地址")
     elif select_text == "GE-ORACLE拣货单":
-        wide_fields.add("Ship To Address")
+        wide_fields.update(("Ship To Address", "Shipping Instruction"))
     placements = _build_header_placements(header_fields, wide_fields, columns)
     for index, field in enumerate(header_fields):
         row, column, span = placements[index]
