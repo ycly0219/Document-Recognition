@@ -39,10 +39,13 @@ from parsers import (
 from wms_client import (
     build_put_original_sales_order_payload,
     build_put_purchase_order_payload,
+    build_put_sku_payload,
     format_wms_response,
     is_wms_send_success,
     send_put_original_sales_order,
     send_put_purchase_order,
+    send_put_sku,
+    validate_put_sku_form,
 )
 
 
@@ -67,6 +70,11 @@ wms_window = None
 wms_window_request_text = None
 wms_window_response_text = None
 wms_confirm_button = None
+product_thread = None
+product_send_active = False
+product_window = None
+product_send_button = None
+product_response_text = None
 
 if sys.platform == "win32":
     PREVIEW_HEADING_FONT = ("Microsoft YaHei UI", 10, "bold")
@@ -438,6 +446,22 @@ def _replace_wms_response(token, text):
         wms_window_response_text.insert(tk.END, text)
         wms_window_response_text.yview_moveto(0)
         wms_window_response_text.config(state=tk.DISABLED)
+    except tk.TclError:
+        pass
+
+
+def _replace_product_response(token, text):
+    """用最新产品接口回告覆盖新增产品窗口返回区。"""
+    if product_response_text is None or id(product_response_text) != token:
+        return
+    try:
+        if not product_response_text.winfo_exists():
+            return
+        product_response_text.config(state=tk.NORMAL)
+        product_response_text.delete("1.0", tk.END)
+        product_response_text.insert(tk.END, text)
+        product_response_text.yview_moveto(0)
+        product_response_text.config(state=tk.DISABLED)
     except tk.TclError:
         pass
 
@@ -1000,6 +1024,7 @@ def _background_task_active():
         or (export_thread is not None and export_thread.is_alive())
         or (continue_thread is not None and continue_thread.is_alive())
         or (wms_thread is not None and wms_thread.is_alive())
+        or (product_thread is not None and product_thread.is_alive())
     )
 
 
@@ -1138,7 +1163,8 @@ def refresh_export_state():
         and preview_select_text in (
             "GE-发票单", "GE-ORACLE拣货单", "GE-OSCAR拣货单"
         )
-        and not _background_task_active() and not wms_send_active
+        and not _background_task_active()
+        and not wms_send_active and not product_send_active
         else tk.DISABLED
     )
     add_btn.config(state=tk.NORMAL if tree_editable else tk.DISABLED)
@@ -1398,10 +1424,264 @@ def export_worker(export_targets, output_dir):
     ui_message_queue.put(("complete", msg))
 
 
+def close_product_window():
+    """关闭新增产品窗口并清理界面引用。"""
+    global product_window, product_response_text, product_send_button
+    if product_window is not None:
+        try:
+            product_window.destroy()
+        except tk.TclError:
+            pass
+    product_window = None
+    product_response_text = None
+    product_send_button = None
+    if wms_window is not None:
+        try:
+            if wms_window.winfo_exists():
+                win.after_idle(_reapply_wms_grab)
+        except tk.TclError:
+            pass
+
+
+def open_add_product_window(parent=None):
+    """打开新增产品模态窗口，支持连续录入并发送产品主数据。"""
+    global product_window, product_response_text, product_send_button
+    if product_send_active:
+        return
+    if product_window is not None:
+        try:
+            if product_window.winfo_exists():
+                product_window.lift()
+                product_window.focus_force()
+                return
+        except tk.TclError:
+            product_window = None
+    if parent is None:
+        parent = wms_window if wms_window is not None else win
+    try:
+        if not parent.winfo_exists():
+            return
+    except tk.TclError:
+        return
+
+    product_window = tk.Toplevel(parent)
+    product_window.title("新增产品")
+    product_window.geometry("760x640")
+    product_window.minsize(680, 560)
+    product_window.transient(parent)
+    product_window.grab_set()
+    product_window.protocol("WM_DELETE_WINDOW", close_product_window)
+
+    body = tk.Frame(product_window)
+    body.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+
+    form = tk.Frame(body)
+    form.pack(fill=tk.X)
+    form.columnconfigure(1, weight=1)
+    form.columnconfigure(3, weight=1)
+
+    product_code_var = tk.StringVar()
+    tk.Label(
+        form, text="产品编码（必填）", fg="#B42318", font=BUTTON_FONT,
+        anchor="w",
+    ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 4))
+    product_code_entry = tk.Entry(
+        form, textvariable=product_code_var, font=("黑体", 11)
+    )
+    product_code_entry.grid(
+        row=1, column=0, columnspan=4, sticky="ew", pady=(0, 10)
+    )
+
+    tk.Label(
+        form, text="产品描述（必填）", fg="#B42318", font=BUTTON_FONT,
+        anchor="w",
+    ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(0, 4))
+    sku_descr_text = tk.Text(
+        form, height=2, wrap=tk.WORD, font=("黑体", 11)
+    )
+    sku_descr_text.grid(
+        row=3, column=0, columnspan=4, sticky="ew", pady=(0, 10)
+    )
+
+    tk.Label(
+        form, text="产品属性", font=("黑体", 11, "bold"), anchor="w"
+    ).grid(row=4, column=0, columnspan=4, sticky="w")
+    attribute_frame = tk.Frame(form)
+    attribute_frame.grid(
+        row=5, column=0, columnspan=4, sticky="w", pady=(4, 6)
+    )
+
+    serial_var = tk.BooleanVar(value=False)
+    batch_var = tk.BooleanVar(value=False)
+    expiry_var = tk.BooleanVar(value=False)
+    dangerous_var = tk.BooleanVar(value=False)
+    medical_var = tk.BooleanVar(value=False)
+    tube_var = tk.BooleanVar(value=False)
+
+    checkbox_first_row = (
+        ("序列号控制", serial_var),
+        ("批次控制", batch_var),
+        ("效期控制", expiry_var),
+    )
+    checkbox_second_row = (
+        ("危险品", dangerous_var),
+        ("医疗器械", medical_var),
+        ("球管", tube_var),
+    )
+    for col, (text, variable) in enumerate(checkbox_first_row):
+        tk.Checkbutton(
+            attribute_frame, text=text, variable=variable, font=("黑体", 11)
+        ).grid(row=0, column=col, sticky="w", padx=(0, 16))
+    for col, (text, variable) in enumerate(checkbox_second_row):
+        tk.Checkbutton(
+            attribute_frame, text=text, variable=variable, font=("黑体", 11)
+        ).grid(row=1, column=col, sticky="w", padx=(0, 16), pady=(4, 0))
+
+    shelf_life_var = tk.StringVar()
+    shelf_life_unit_var = tk.StringVar(value="MONTH")
+    shelf_frame = tk.Frame(form)
+    shelf_frame.grid(
+        row=6, column=0, columnspan=4, sticky="w", pady=(8, 0)
+    )
+    tk.Label(
+        shelf_frame, text="有效期", font=("黑体", 11)
+    ).pack(side=tk.LEFT)
+    shelf_life_entry = tk.Entry(
+        shelf_frame, textvariable=shelf_life_var, width=12,
+        state=tk.DISABLED, font=("黑体", 11),
+    )
+    shelf_life_entry.pack(side=tk.LEFT, padx=(8, 12))
+    shelf_radios = []
+    for unit_value, unit_label in (
+        ("DAY", "日"), ("MONTH", "月"), ("YEAR", "年")
+    ):
+        radio = tk.Radiobutton(
+            shelf_frame, text=unit_label, value=unit_value,
+            variable=shelf_life_unit_var, state=tk.DISABLED,
+            font=("黑体", 11),
+        )
+        radio.pack(side=tk.LEFT, padx=(0, 10))
+        shelf_radios.append(radio)
+
+    def toggle_shelf_life(*_args):
+        enabled = bool(medical_var.get())
+        state = tk.NORMAL if enabled else tk.DISABLED
+        shelf_life_entry.config(state=state)
+        for radio in shelf_radios:
+            radio.config(state=state)
+
+    medical_var.trace_add("write", toggle_shelf_life)
+    toggle_shelf_life()
+
+    response_frame = tk.Frame(body)
+    response_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+    product_response_text = _wms_text_pane(response_frame, "接口返回内容")
+    product_response_text.configure(height=5)
+    product_response_text.config(state=tk.NORMAL)
+    product_response_text.insert(tk.END, "尚未发送")
+    product_response_text.config(state=tk.DISABLED)
+
+    checkbox_vars = [
+        serial_var, batch_var, expiry_var,
+        dangerous_var, medical_var, tube_var,
+    ]
+
+    def collect_product_form():
+        return {
+            "sku": product_code_var.get(),
+            "sku_descr": sku_descr_text.get("1.0", "end-1c"),
+            "serial_control": serial_var.get(),
+            "batch_control": batch_var.get(),
+            "expiry_control": expiry_var.get(),
+            "dangerous": dangerous_var.get(),
+            "medical_device": medical_var.get(),
+            "tube": tube_var.get(),
+            "shelf_life": shelf_life_var.get(),
+            "shelf_life_unit": shelf_life_unit_var.get(),
+        }
+
+    def clear_product_form():
+        if product_send_active:
+            return
+        product_code_var.set("")
+        sku_descr_text.delete("1.0", tk.END)
+        for variable in checkbox_vars:
+            variable.set(False)
+        shelf_life_var.set("")
+        shelf_life_unit_var.set("MONTH")
+        toggle_shelf_life()
+        _replace_product_response(id(product_response_text), "尚未发送")
+        product_send_button.config(state=tk.NORMAL, text="确认发送")
+        product_code_entry.focus_set()
+
+    def start_product_send():
+        global product_thread, product_send_active
+        if product_send_active:
+            return
+        form_values = collect_product_form()
+        error = validate_put_sku_form(form_values)
+        if error:
+            messagebox.showwarning(
+                "校验失败", error, parent=product_window
+            )
+            return
+        payload = build_put_sku_payload(form_values)
+        product_send_active = True
+        product_send_button.config(state=tk.DISABLED, text="发送中...")
+        token = id(product_response_text)
+        product_thread = threading.Thread(
+            target=product_send_worker, args=(payload, token), daemon=True
+        )
+        product_thread.start()
+        refresh_export_state()
+        win.after(100, poll_ui_queue)
+
+    button_frame = tk.Frame(body)
+    button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
+    product_send_button = tk.Button(
+        button_frame, text="确认发送", command=start_product_send,
+        width=12, bg="#0E7490", fg="#111827", font=BUTTON_FONT,
+        activebackground="#155E75", activeforeground="#111827",
+        disabledforeground=DISABLED_FOREGROUND,
+    )
+    product_send_button.pack(side=tk.RIGHT, padx=(0, 8))
+    tk.Button(
+        button_frame, text="取消", command=close_product_window,
+        width=10, font=BUTTON_FONT,
+        disabledforeground=DISABLED_FOREGROUND,
+    ).pack(side=tk.RIGHT, padx=(8, 0))
+    tk.Button(
+        button_frame, text="清空", command=clear_product_form,
+        width=10, font=BUTTON_FONT,
+        disabledforeground=DISABLED_FOREGROUND,
+    ).pack(side=tk.RIGHT)
+    product_window.after(100, product_code_entry.focus_set)
+
+
+def product_send_worker(payload, token):
+    """后台发送 putSKU 产品主数据报文并回传结果。"""
+    print_log("正在发送WMS产品主数据报文...")
+    try:
+        response = send_put_sku(payload)
+        text = format_wms_response(response)
+        print_log(f"WMS产品接口回告：{text[:200]}")
+        if is_wms_send_success(response):
+            result_text = f"发送成功\n\n{text}"
+        else:
+            result_text = f"发送失败：HTTP 状态或 returnFlag 不满足\n\n{text}"
+        ui_message_queue.put(("product_send_result", token, result_text))
+    except Exception as e:
+        print_log(f"WMS产品接口发送失败: {e}")
+        ui_message_queue.put(
+            ("product_send_result", token, f"发送失败：{e}")
+        )
+
+
 def close_wms_window():
     """关闭接口发送二级窗口并清理界面引用。"""
     global wms_window, wms_window_request_text, wms_window_response_text
     global wms_confirm_button
+    close_product_window()
     if wms_window is not None:
         try:
             wms_window.destroy()
@@ -1415,45 +1695,63 @@ def close_wms_window():
 
 def _release_wms_grab_on_iconify(_event=None):
     """主窗口最小化时释放二级窗口抓取，避免任务栏恢复被模态状态阻塞。"""
-    if wms_window is not None:
+    for target in (product_window, wms_window):
+        if target is None:
+            continue
         try:
-            wms_window.grab_release()
+            target.grab_release()
         except tk.TclError:
             pass
 
 
 def _reapply_wms_grab():
     """重新给接口发送二级窗口设置模态抓取。"""
-    if wms_window is None:
+    target = product_window if product_window is not None else wms_window
+    if target is None:
         return
     try:
-        if wms_window.winfo_exists():
-            wms_window.grab_set()
+        if target.winfo_exists():
+            target.grab_set()
     except tk.TclError:
         pass
 
 
 def _restore_wms_window_on_map(_event=None):
     """主窗口恢复时同步恢复接口发送二级窗口并重新建立抓取。"""
-    if wms_window is None:
-        return
-    try:
-        if not wms_window.winfo_exists():
-            return
-        wms_window.deiconify()
-        wms_window.lift()
-        wms_window.focus_force()
+    if wms_window is not None:
+        try:
+            if wms_window.winfo_exists():
+                wms_window.deiconify()
+                wms_window.lift()
+                wms_window.focus_force()
+        except tk.TclError:
+            pass
+    if product_window is not None:
+        try:
+            if product_window.winfo_exists():
+                product_window.deiconify()
+                product_window.lift()
+                product_window.focus_force()
+        except tk.TclError:
+            pass
+    if wms_window is not None or product_window is not None:
         win.after_idle(_reapply_wms_grab)
-    except tk.TclError:
-        pass
 
 
 def open_wms_send_window():
     """打开当前页签的只读报文窗口，支持确认发送和回告展示。"""
     global wms_window, wms_window_request_text, wms_window_response_text
-    global wms_confirm_button, wms_thread
+    global wms_confirm_button, wms_thread, product_window
     global wms_send_active
-    if wms_send_active or _background_task_active():
+    if product_window is not None:
+        try:
+            if product_window.winfo_exists():
+                product_window.lift()
+                product_window.focus_force()
+                return
+        except tk.TclError:
+            product_window = None
+    if product_send_active or wms_send_active or _background_task_active():
         return
     if preview_select_text not in (
         "GE-发票单", "GE-ORACLE拣货单", "GE-OSCAR拣货单"
@@ -1570,6 +1868,12 @@ def open_wms_send_window():
         disabledforeground=DISABLED_FOREGROUND,
     ).pack(side=tk.RIGHT)
     wms_confirm_button.pack(side=tk.RIGHT, padx=(0, 8))
+    tk.Button(
+        button_frame, text="新增产品", command=open_add_product_window,
+        width=10, bg="#0E7490", fg="#111827", font=BUTTON_FONT,
+        activebackground="#155E75", activeforeground="#111827",
+        disabledforeground=DISABLED_FOREGROUND,
+    ).pack(side=tk.RIGHT, padx=(0, 8))
 
     wms_window.wait_visibility()
     paned.update_idletasks()
@@ -1637,7 +1941,7 @@ def update_progress(done, total):
 
 def poll_ui_queue():
     """主线程轮询处理结果消息，并驱动界面状态更新。"""
-    global continue_query_active, wms_send_active
+    global continue_query_active, wms_send_active, product_send_active
     flush_log()
     while True:
         try:
@@ -1691,6 +1995,19 @@ def poll_ui_queue():
             _refresh_file_status_label(info)
             on_preview_tab_changed()
             set_progress_state(100, "处理进度：续查未生成结果", "#D97706")
+        elif kind == "product_send_result":
+            token, text = payload
+            _replace_product_response(token, text)
+            product_send_active = False
+            if product_send_button is not None:
+                try:
+                    if product_send_button.winfo_exists():
+                        product_send_button.config(
+                            state=tk.NORMAL, text="重新发送"
+                        )
+                except tk.TclError:
+                    pass
+            refresh_export_state()
         elif kind == "wms_send_result":
             token, text = payload
             _replace_wms_response(token, text)
@@ -1707,7 +2024,10 @@ def poll_ui_queue():
 
     if any(
         thread is not None and thread.is_alive()
-        for thread in (worker_thread, export_thread, continue_thread, wms_thread)
+        for thread in (
+            worker_thread, export_thread, continue_thread,
+            wms_thread, product_thread,
+        )
     ):
         win.after(100, poll_ui_queue)
 
@@ -1839,6 +2159,12 @@ query_log_btn = tk.Button(
     disabledforeground=DISABLED_FOREGROUND,
 )
 query_log_btn.pack(side=tk.LEFT, padx=(8, 0))
+tk.Button(
+    op_frame, text="新增产品", command=open_add_product_window,
+    width=10, bg="#0E7490", fg="#111827", font=BUTTON_FONT,
+    activebackground="#155E75", activeforeground="#111827",
+    disabledforeground=DISABLED_FOREGROUND,
+).pack(side=tk.LEFT, padx=(8, 0))
 
 win.after(200, poll_log_queue)
 

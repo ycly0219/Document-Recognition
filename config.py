@@ -40,6 +40,11 @@ WMS_PUT_ORIGINAL_SALES_ORDER_URL = (
     "?method=putOriginalSalesOrder&apptoken=0B61B741BB1970A66A63DD653A131D68"
     "&sign=123&format=json"
 )
+WMS_PUT_SKU_URL = (
+    "https://sinoewms-qas.i.sinotrans.com/datahubjson/FluxWmsJsonApi_WJC/"
+    "?method=putSKU&apptoken=0B61B741BB1970A66A63DD653A131D68"
+    "&timestamp=&sign=123&format=json"
+)
 WMS_CUSTOMER_ID = "GEHC"
 WMS_WAREHOUSE_ID = "WH004078"
 

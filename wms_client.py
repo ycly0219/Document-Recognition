@@ -1,7 +1,8 @@
-"""Flux WMS putPurchaseOrder / putOriginalSalesOrder 报文构建与发送。"""
+"""Flux WMS putPurchaseOrder / putOriginalSalesOrder / putSKU 报文构建与发送。"""
 
 from datetime import datetime
 import json
+import re
 
 import requests
 
@@ -9,6 +10,7 @@ from config import (
     WMS_CUSTOMER_ID,
     WMS_PUT_ORIGINAL_SALES_ORDER_URL,
     WMS_PUT_PURCHASE_ORDER_URL,
+    WMS_PUT_SKU_URL,
     WMS_WAREHOUSE_ID,
 )
 from excel_export import (
@@ -67,6 +69,84 @@ def _optional_item(target, key, value):
     text = _text(value)
     if text:
         target[key] = text
+
+
+_PUT_SKU_CHECKBOX_FIELDS = (
+    ("serial_control", "skuGroup1", "SNY"),
+    ("batch_control", "skuGroup2", "LOTY"),
+    ("expiry_control", "skuGroup3", "EXPY"),
+    ("dangerous", "skuGroup4", "HAZARDY"),
+    ("medical_device", "freightClass", "MD"),
+    ("tube", "skuGroup5", "TUBE"),
+)
+
+_SHELF_LIFE_UNIT_VALUES = {
+    "DAY": "DAY",
+    "MONTH": "MONTH",
+    "YEAR": "YEAR",
+    "日": "DAY",
+    "月": "MONTH",
+    "年": "YEAR",
+}
+
+
+def _checked(value):
+    """把 Tk BooleanVar 或简单字符串整理为布尔值。"""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in ("1", "true", "yes", "y", "是")
+
+
+def _normalize_shelf_life_unit(value):
+    """把有效期单位统一成 putSKU 使用的 DAY/MONTH/YEAR。"""
+    return _SHELF_LIFE_UNIT_VALUES.get(_text(value), "MONTH")
+
+
+def validate_put_sku_form(form):
+    """新增产品表单校验，返回空字符串表示通过。"""
+    raw_sku = form.get("sku")
+    sku = "" if raw_sku is None else str(raw_sku)
+    if not re.fullmatch(r"[A-Z0-9-]{1,50}", sku):
+        return "产品编码只能包含大写字母、数字和-，长度1-50位，不能包含空格或换行"
+    if not _text(form.get("sku_descr")):
+        return "产品描述不能为空"
+    if _checked(form.get("medical_device")):
+        shelf_life = form.get("shelf_life")
+        if shelf_life is None or not str(shelf_life).isdigit():
+            return "勾选医疗器械后，有效期必填且必须为纯数字"
+    return ""
+
+
+def build_put_sku_payload(form):
+    """按新增产品表单组装 Flux WMS putSKU 报文。"""
+    raw_sku = form.get("sku")
+    sku = "" if raw_sku is None else str(raw_sku)
+    medical_device = _checked(form.get("medical_device"))
+    header = {
+        "customerId": WMS_CUSTOMER_ID,
+        "sku": sku,
+        "skuDescr1": _text(form.get("sku_descr")),
+        "activeFlag": "Y",
+        "packId": "HD78_E841_01",
+    }
+    for form_key, field, checked_value in _PUT_SKU_CHECKBOX_FIELDS:
+        header[field] = checked_value if _checked(form.get(form_key)) else ""
+    header.update({
+        "shelfLifeFlag": "Y" if medical_device else "",
+        "shelfLifeUnit": (
+            _normalize_shelf_life_unit(form.get("shelf_life_unit"))
+            if medical_device else ""
+        ),
+        "shelfLifeType": "M" if medical_device else "",
+        "shelfLife": _text(form.get("shelf_life")) if medical_device else "",
+        "qcPoint": "BEFORRECEIVING",
+        "qcRule": "HD78_E841_01",
+    })
+    return {"data": {"header": [header]}}
 
 
 def _build_oracle_put_original_sales_order_payload(header_values, detail_rows):
@@ -273,6 +353,11 @@ def send_put_original_sales_order(payload):
     return requests.post(
         WMS_PUT_ORIGINAL_SALES_ORDER_URL, json=payload, timeout=30
     )
+
+
+def send_put_sku(payload):
+    """发送 putSKU 产品主数据报文并返回接口响应对象。"""
+    return requests.post(WMS_PUT_SKU_URL, json=payload, timeout=30)
 
 
 def is_wms_send_success(response):

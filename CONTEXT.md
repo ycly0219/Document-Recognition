@@ -41,6 +41,18 @@
 - **Flux WMS putOriginalSalesOrder**：WMS 销售订单接收接口；当前已按 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 导出的销售订单 Excel 字段约定报文映射并实现发送入口，接口发送覆盖发票与两种拣货单。
 - **销售订单字段映射（Sales Order Field Mapping）**：将销售订单 Excel 模板中的 ORACLE/OSCAR 字段与 Flux WMS `putOriginalSalesOrder` 报文字段对应起来的约定；无可靠来源或固定值的字段不发送。
 - **接口发送（WMS Send）**：当前单据页签顶部的发送入口，覆盖 `GE-发票单` / `GE-ORACLE拣货单` / `GE-OSCAR拣货单`；点击后在二级窗口同时展示当前页签组装的只读 JSON 报文与接口返回区，确认发送后返回区展示最新接口回告，并保留重新发送当前报文的入口；二级窗口底部操作按钮固定可见，默认报文区更高；打开接口发送二级窗口时最小化程序，恢复主窗口时二级窗口会一起恢复。
+- **新增产品（Add Product）**：接口发送二级窗口「确认发送」左侧及主界面「查询日志」右侧的入口，三种单据共用同一弹窗与发送逻辑；点击后打开独立模态窗口录入产品主数据，直接调用 Flux WMS `putSKU`，发送成功或失败后弹窗保留，可清空后继续录入。
+- **Flux WMS putSKU**：WMS 产品主数据（SKU）接收接口；使用用户提供的 QAS 测试 URL 与空 `timestamp`，固定货主 `GEHC`，并固定 `activeFlag=Y`、`packId=HD78_E841_01`、`qcPoint=BEFORRECEIVING`、`qcRule=HD78_E841_01`。
+- **产品编码（SKU Code）**：新增产品必填主数据编码，报文映射 `sku`；仅允许大写字母、数字与 `-`，长度 1-50，不做首尾裁剪。
+- **产品描述（SKU Description）**：新增产品必填描述，报文映射 `skuDescr1`；发送前去除首尾空格或换行符。
+- **序列号控制（Serial Control）**：新增产品属性开关；勾选时 `skuGroup1=SNY`，未勾选传空字符串。
+- **批次控制（Batch Control）**：新增产品属性开关；勾选时 `skuGroup2=LOTY`，未勾选传空字符串。
+- **效期控制（Expiry Control）**：新增产品属性开关；勾选时 `skuGroup3=EXPY`，未勾选传空字符串。
+- **危险品（Hazardous Product）**：新增产品属性开关；勾选时 `skuGroup4=HAZARDY`，未勾选传空字符串。
+- **医疗器械（Medical Device）**：新增产品属性开关；勾选时 `freightClass=MD`，同时开放有效期及有效期单位填写并强制必填。
+- **球管（Tube）**：新增产品属性开关；勾选时 `skuGroup5=TUBE`，未勾选传空字符串。
+- **有效期与有效期单位（Shelf Life / Unit）**：仅医疗器械勾选后开放填写；有效期必须为纯数字并映射 `shelfLife`，单位默认月（`MONTH`），日/月/年分别对应 `DAY`/`MONTH`/`YEAR`；勾选医疗器械时另固定 `shelfLifeFlag=Y`、`shelfLifeType=M`，未勾选时这些字段传空字符串。
+- **putSKU 报文（SKU Request Payload）**：新增产品表单按 `putSKU` 契约组装为 `{"data": {"header": [...]}}`；发送成功与失败判定复用拣货单的 `returnFlag` 规则，回告展示在新增产品窗口内。
 - **putPurchaseOrder 报文（WMS Request Payload）**：由当前发票页签单据头与全部可编辑明细构成；头部仅含 `warehouseId`、`customerId`、`poType`、`docNo`、`poReferenceA`、`udf01`、`udf02`，明细仅含映射字段、按发送顺序生成的 `lineNo` 与 `packUom=EA`，不发送原始汇总行。
 - **putOriginalSalesOrder 报文（Sales Order Request Payload）**：由当前 `GE-ORACLE拣货单` / `GE-OSCAR拣货单` 页签单据头与全部可编辑明细构成；头部含固定字段（含 `consigneeName=虚拟收货人`）和有可靠来源的映射字段，明细仅含映射字段、按发送顺序生成的 `lineNo`、`packUom=EA`、`price=0`、`lotAtt05` 来源标识与已确认的 `dedi01/02/03`，空值字段不发送。
 - **运单号（Waybill No.）**：`GE-发票单` 单据头新增的手工必填字段，位于 `订单类型` 右侧；OCR 不识别，也不复用 `HAWB`，确认并导出时写入 Excel `G` 列，接口发送时放入 WMS 报文头部 `poReferenceA`。
