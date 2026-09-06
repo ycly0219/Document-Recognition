@@ -9,7 +9,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-py -3 -m pip install -r requirements.txt
+py -3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 if errorlevel 1 goto :error
 
 py -3 -m PyInstaller --clean --noconfirm ge_tool.spec

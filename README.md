@@ -84,7 +84,7 @@
 ## 安装与运行
 
 ```bash
-python3 -m pip install requests openpyxl
+python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple requests openpyxl
 python3 "tool.py"
 ```
 
@@ -95,7 +95,7 @@ PyInstaller 不支持跨平台编译，Windows exe 必须在 Windows 机器上�
 首次构建前安装 64 位 Python 3（建议 3.12），然后在本项目目录执行：
 
 ```bat
-py -3 -m pip install -r requirements.txt
+py -3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 ```
 
@@ -163,6 +163,7 @@ py -3 -m PyInstaller --clean --noconfirm ge_tool.spec
 
 ## 更新记录
 
+- 2026-09-06: [变更] pip 构建源切换为清华 TUNA 镜像
 - 2026-09-06: [新增] 接口发送二级窗口「确认发送」左侧新增「新增产品」，支持产品编码/产品描述、六个产品属性选择框及医疗器械联动的有效期/单位录入，并接入 Flux WMS `putSKU` 发送与回告展示；成功后弹窗不自动关闭，可「清空」连续录入
 - 2026-09-06: [新增] 主界面「查询日志」右侧新增「新增产品」入口，与接口发送二级窗口共用同一弹窗、校验与 `putSKU` 发送逻辑
 - 2026-09-06: [修复] 修复接口发送按钮点击无反应：`open_wms_send_window` 补充 `product_window` 的 `global` 声明，避免局部变量提前读取导致 `UnboundLocalError`
